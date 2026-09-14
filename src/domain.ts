@@ -1,7 +1,7 @@
 import type { ParticipantRow } from './types';
 
 export const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-export const LOCK_BEFORE_MS = 2 * 60 * 60 * 1000;
+export const LOCK_BEFORE_MS = 5 * 60 * 1000; // ponytail: temporary test value, restore to 2 * 60 * 60 * 1000 before real use
 export const AUTO_SETTLE_MS = 3 * 60 * 60 * 1000;
 export const ARRIVAL_RADIUS_M = 150;
 

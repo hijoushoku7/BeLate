@@ -10,6 +10,27 @@ function groupId(event: LineEvent): string | null {
 function userId(event: LineEvent): string | null { return 'userId' in event.source ? event.source.userId ?? null : null; }
 function liffUrl(env: Env, eventId: string, mode = 'arrive'): string { return `https://liff.line.me/${env.LIFF_ID}?e=${encodeURIComponent(eventId)}&mode=${mode}`; }
 
+const HELP = `BeLateの使い方
+
+① 集合場所をグループに位置情報で送る（＋ → 位置情報）
+② 出てきたボタンで日時と罰金を選ぶ（送った人が幹事）
+③ 参加する人は「参加」ボタン。Botを友だち追加していない人は参加できません
+④ 集合時刻を過ぎたら、届いたリンクから到着報告（150m以内で到着判定）
+
+ダウトはBotとの1:1トークで「ダウト」と送信。締切は集合の2時間前で、結果は精算時にグループで全公開されます。
+
+キーワード
+・ヘルプ … この案内（@BeLate とメンションしてもOK）
+・戦績 … 遅刻回数・平均遅刻・累計罰金
+・精算 … 精算結果をもう一度表示
+・解散 … 幹事がイベントを締める`;
+
+// Mentions arrive inside the text ("@BeLate 戦績"), so strip them before matching keywords.
+export function commandText(message: { text?: string; mention?: { mentionees?: { index: number; length: number }[] } }): string {
+  const mentionees = [...(message.mention?.mentionees ?? [])].sort((a, b) => b.index - a.index);
+  return mentionees.reduce((value, m) => value.slice(0, m.index) + value.slice(m.index + m.length), message.text ?? '').trim();
+}
+
 const replyContexts = new Map<string, { env: Env; groupId: string }>();
 
 async function reply(token: string, replyToken: string | undefined, messages: LineMessage[]): Promise<void> {
@@ -44,7 +65,7 @@ function creationTimeMessage(eventId: string, now: number): LineMessage {
 async function handleJoin(env: Env, event: LineEvent): Promise<void> {
   const gid = groupId(event); if (!gid) return;
   await env.DB.prepare('INSERT OR IGNORE INTO groups(line_group_id,doubt_enabled,created_at) VALUES(?,1,?)').bind(gid, Date.now()).run();
-  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [buttons('BeLateへようこそ。ダウト機能を使いますか？', [
+  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP), buttons('ダウト機能（遅刻するかを賭ける）を使いますか？ 結果は精算時に全公開されます。', [
     postbackAction('使う', `action=group_doubt&group=${gid}&value=1`), postbackAction('使わない', `action=group_doubt&group=${gid}&value=0`),
   ])]);
 }
@@ -119,13 +140,13 @@ async function stats(env: Env, lineEvent: LineEvent): Promise<void> {
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text(`【戦績】\n${rows.map(r => `${r.display_name || String(r.user_id).slice(-6)}: 遅刻${r.late_count}/${r.events}回、平均${r.avg_late ?? 0}分、累計${Number(r.total_fine).toLocaleString()}円`).join('\n') || 'まだ戦績はありません'}`)]);
 }
 
-async function finish(env: Env, lineEvent: LineEvent): Promise<void> {
+async function finish(env: Env, lineEvent: LineEvent, command: string): Promise<void> {
   const gid = groupId(lineEvent), uid = userId(lineEvent); if (!gid || !uid) return;
-  const row = lineEvent.message?.text === '精算'
+  const row = command === '精算'
     ? await env.DB.prepare('SELECT * FROM events WHERE group_id=? ORDER BY created_at DESC LIMIT 1').bind(gid).first<EventRow>()
     : await activeEvent(env.DB, gid);
   if (!row) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('対象のイベントはありません。')]); return; }
-  if (lineEvent.message?.text === '解散') {
+  if (command === '解散') {
     if (row.owner_id !== uid) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('解散できるのは幹事だけです。')]); return; }
     if (row.state === 'draft') {
       await env.DB.prepare('DELETE FROM events WHERE id=?').bind(row.id).run();
@@ -194,10 +215,11 @@ export async function handleLineEvent(env: Env, event: LineEvent): Promise<void>
   if (event.type === 'message' && event.message?.type === 'location') return handleLocation(env, event);
   if (event.type === 'postback') return handlePostback(env, event);
   if (event.type !== 'message' || event.message?.type !== 'text') return;
-  const value = event.message.text?.trim() ?? '';
+  const value = commandText(event.message);
+  const mentionedSelf = event.message.mention?.mentionees?.some(m => m.isSelf) ?? false;
   if (value === '戦績') return stats(env, event);
-  if (value === '精算' || value === '解散') return finish(env, event);
+  if (value === '精算' || value === '解散') return finish(env, event, value);
   if (value === 'ダウト') return doubtMenu(env, event);
-  if (value === 'ヘルプ' || value === 'help') return reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('位置情報をグループへ送るとイベントを作れます。操作: 戦績 / 精算 / 解散 / ダウト')]);
+  if (value === 'ヘルプ' || value === 'help' || mentionedSelf) return reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP)]);
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, []);
 }

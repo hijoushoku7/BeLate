@@ -24,7 +24,8 @@ export type LineSource = { type: 'user'; userId: string } |
 
 export interface LineEvent {
   type: string; timestamp: number; replyToken?: string; source: LineSource;
-  message?: { id: string; type: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string };
+  message?: { id: string; type: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string;
+    mention?: { mentionees?: { index: number; length: number; isSelf?: boolean }[] } };
   postback?: { data: string; params?: { datetime?: string } };
 }
 

@@ -1,19 +1,109 @@
 export function liffHtml(liffId: string): string {
   const safeId = JSON.stringify(liffId).replace(/</g, '\\u003c');
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BeLate</title>
-  <style>body{font-family:system-ui,sans-serif;max-width:560px;margin:auto;padding:24px;background:#f5f7f6;color:#18201c}main{background:white;padding:22px;border-radius:16px;box-shadow:0 4px 20px #0001}button,input{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box}button{border:0;border-radius:9px;background:#06c755;color:white;font-weight:700}button.secondary{background:#52605a}label{display:block;margin-top:10px}#status{white-space:pre-wrap;margin:14px 0}.hidden{display:none}</style>
-  </head><body><main><h1>BeLate</h1><div id="status">読み込み中…</div><section id="report" class="hidden"><button id="arrive">位置情報で到着報告</button><button id="share" class="secondary">現在地との距離だけ共有</button><button id="manual" class="secondary">位置が取れないので手動申告</button></section>
-  <form id="settings" class="hidden"><label>集合日時<input id="meet" type="datetime-local" required></label><label>初期金額<input id="base" type="number" min="0" required></label><label>1分あたり<input id="per" type="number" min="0" required></label><label>上限<input id="max" type="number" min="0" required></label><button>設定を保存</button></form></main>
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
-  const LIFF_ID=${safeId}, qs=new URLSearchParams(location.search), eventId=qs.get('e'), mode=qs.get('mode')||'arrive'; let profile,eventData;
-  const status=document.querySelector('#status'), report=document.querySelector('#report'), settings=document.querySelector('#settings');
-  async function json(url,opts){const r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error||'通信エラー');return j}
-  async function init(){try{await liff.init({liffId:LIFF_ID});if(!liff.isLoggedIn()){liff.login();return}if(!liff.isInClient())throw Error('LINEアプリ内から開いてください');profile=await liff.getProfile();eventData=await json('/api/events/'+encodeURIComponent(eventId));
-    if(mode==='settings'){settings.classList.remove('hidden');document.querySelector('#meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);document.querySelector('#base').value=eventData.baseFine;document.querySelector('#per').value=eventData.perMin;document.querySelector('#max').value=eventData.maxFine;status.textContent='幹事用の詳細設定';}
-    else{report.classList.remove('hidden');status.textContent=eventData.placeName+' / '+new Date(eventData.meetAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'});}
-  }catch(e){status.textContent=e.message}}
-  function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
-  function locate(arrive){status.textContent='位置情報を取得中…';navigator.geolocation.getCurrentPosition(async p=>{try{const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),lat:p.coords.latitude,lng:p.coords.longitude,arrive})});status.textContent=j.message+'\nあなたへのダウト: 遅刻する '+j.doubtProgress.predictsLate+' / 全'+j.doubtProgress.total;}catch(e){status.textContent=e.message}},e=>status.textContent='位置情報を取得できません: '+e.message,{enableHighAccuracy:true,timeout:15000})}
-  document.querySelector('#arrive').onclick=()=>locate(true);document.querySelector('#share').onclick=()=>locate(false);document.querySelector('#manual').onclick=async()=>{if(!confirm('グループ内で確認する手動到着申告を送りますか？'))return;try{const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),arrive:true,manual:true})});status.textContent=j.message}catch(e){status.textContent=e.message}};
-  settings.onsubmit=async e=>{e.preventDefault();try{const j=await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date(document.querySelector('#meet').value+'+09:00').getTime(),baseFine:+document.querySelector('#base').value,perMin:+document.querySelector('#per').value,maxFine:+document.querySelector('#max').value})});status.textContent=j.message}catch(e){status.textContent=e.message}};init();</script></body></html>`;
+<style>
+:root{
+  --ground:#ecefec;--surface:#fff;--ink:#10151a;--muted:#61716b;--line:#dde3df;
+  --accent:#06c755;--accent-ink:#04381f;--warn:#c2571a;--shadow:0 1px 2px #0f151a0f,0 12px 28px -18px #0f151a59;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0c110f;--surface:#161c19;--ink:#eef2ef;--muted:#96a49d;--line:#273029;
+  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
+}}
+:root[data-theme="dark"]{
+  --ground:#0c110f;--surface:#161c19;--ink:#eef2ef;--muted:#96a49d;--line:#273029;
+  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  font-feature-settings:"palt";-webkit-text-size-adjust:100%}
+main{max-width:480px;margin:0 auto;padding:16px;padding-block:20px 40px;display:flex;flex-direction:column;gap:14px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mark{font-weight:800;letter-spacing:.14em;font-size:13px;text-transform:uppercase;color:var(--muted)}
+.pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill[data-live="1"]{color:var(--accent-ink);background:var(--accent);border-color:transparent}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+.eyebrow{margin:0 0 6px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{margin:0;font-size:23px;line-height:1.3;text-wrap:balance}
+.when{margin:10px 0 0;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.count{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:baseline;gap:8px}
+.count b{font-size:34px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.count span{font-size:13px;color:var(--muted)}
+.count[data-late="1"] b{color:var(--warn)}
+.rule{margin:12px 0 0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.msg{white-space:pre-wrap;line-height:1.65;font-size:15px}
+.msg[data-tone="error"]{border-color:var(--warn);color:var(--warn)}
+.actions{display:flex;flex-direction:column;gap:9px}
+button,input{font:inherit;width:100%}
+button{padding:15px;border:0;border-radius:13px;background:var(--accent);color:var(--accent-ink);font-weight:800;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600}
+button:disabled{opacity:.5}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+form{display:flex;flex-direction:column;gap:12px}
+label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+input{padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--ground);color:var(--ink)}
+.foot{margin:0;text-align:center;font-size:12px;color:var(--muted)}
+.hidden{display:none!important}
+</style>
+</head><body><main>
+<div class="topbar"><span class="mark">BeLate</span><span id="state" class="pill">接続中</span></div>
+<section id="event" class="card hidden">
+  <p class="eyebrow">集合場所</p><h1 id="place"></h1>
+  <p id="when" class="when"></p>
+  <div id="count" class="count"><b id="countValue">--</b><span id="countLabel">集合まで</span></div>
+  <p id="rule" class="rule"></p>
+</section>
+<div id="status" class="card msg">読み込み中…</div>
+<section id="report" class="actions hidden">
+  <button id="arrive">位置情報で到着報告</button>
+  <button id="share" class="ghost">現在地との距離だけ共有</button>
+  <button id="manual" class="ghost">位置が取れない（手動で申告）</button>
+</section>
+<form id="settings" class="card hidden">
+  <label>集合日時<input id="meet" type="datetime-local" required></label>
+  <label>初期金額（円）<input id="base" type="number" min="0" required></label>
+  <label>1分あたり（円）<input id="per" type="number" min="0" required></label>
+  <label>上限（円）<input id="max" type="number" min="0" required></label>
+  <button>設定を保存</button>
+</form>
+<p class="foot">集合地点から150m以内で到着になります</p>
+</main>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
+const LIFF_ID=${safeId}, raw=new URLSearchParams(location.search), qs=new URLSearchParams(raw.get('liff.state')?.replace(/^\\?/,'')??location.search), eventId=qs.get('e'), mode=qs.get('mode')||'arrive'; let profile,eventData;
+const $=id=>document.getElementById(id), status=$('status'), report=$('report'), settings=$('settings');
+function say(message,tone){status.textContent=message;status.dataset.tone=tone||'';status.classList.remove('hidden')}
+function fmt(ms){const m=Math.floor(Math.abs(ms)/60000);return (m>=60?Math.floor(m/60)+'時間'+(m%60)+'分':m+'分')}
+function tick(){if(!eventData)return;const left=eventData.meetAt-Date.now();$('countValue').textContent=fmt(left);$('countLabel').textContent=left>=0?'集合まで':'集合から経過';$('count').dataset.late=left<0?'1':'0'}
+async function json(url,opts){const r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error||'通信エラー');return j}
+async function init(){try{
+  await liff.init({liffId:LIFF_ID});
+  if(!liff.isLoggedIn()){liff.login();return}
+  if(!liff.isInClient())throw Error('LINEアプリ内から開いてください');
+  profile=await liff.getProfile();
+  eventData=await json('/api/events/'+encodeURIComponent(eventId));
+  $('place').textContent=eventData.placeName||'集合場所';
+  $('when').textContent=new Date(eventData.meetAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'});
+  $('rule').textContent='罰金 '+eventData.baseFine+'円 + '+eventData.perMin+'円/分（上限'+eventData.maxFine+'円）';
+  $('event').classList.remove('hidden');
+  $('state').textContent={draft:'作成中',open:'参加受付中',locked:'締切済み',running:'カウント中',settled:'精算済み'}[eventData.state]||eventData.state;
+  $('state').dataset.live=eventData.state==='running'?'1':'0';
+  tick();setInterval(tick,30000);
+  if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
+  else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
+}catch(e){say(e.message,'error')}}
+function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
+function locate(arrive){say('位置情報を取得中…');navigator.geolocation.getCurrentPosition(async p=>{try{
+  const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),lat:p.coords.latitude,lng:p.coords.longitude,arrive})});
+  say(j.message+'\\n\\nあなたへのダウト: 遅刻する '+j.doubtProgress.predictsLate+' / 全'+j.doubtProgress.total+'件');
+}catch(e){say(e.message,'error')}},e=>say('位置情報を取得できません: '+e.message,'error'),{enableHighAccuracy:true,timeout:15000})}
+$('arrive').onclick=()=>locate(true);
+$('share').onclick=()=>locate(false);
+$('manual').onclick=async()=>{if(!confirm('グループ内で確認する手動到着申告を送りますか？'))return;try{
+  const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),arrive:true,manual:true})});say(j.message);
+}catch(e){say(e.message,'error')}};
+settings.onsubmit=async e=>{e.preventDefault();try{
+  const j=await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date($('meet').value+'+09:00').getTime(),baseFine:+$('base').value,perMin:+$('per').value,maxFine:+$('max').value})});say(j.message);
+}catch(e){say(e.message,'error')}};
+init();</script></body></html>`;
 }
