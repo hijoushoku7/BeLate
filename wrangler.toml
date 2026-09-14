@@ -5,8 +5,7 @@ compatibility_date = "2026-09-14"
 [[d1_databases]]
 binding = "DB"
 database_name = "belate"
-# Replace after: npx wrangler d1 create belate
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "2946b1a8-3027-4a20-8d37-06cddf95059c"
 migrations_dir = "migrations"
 
 [triggers]
