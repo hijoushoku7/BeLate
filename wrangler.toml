@@ -1,0 +1,17 @@
+name = "belate"
+main = "src/index.ts"
+compatibility_date = "2026-09-14"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "belate"
+# Replace after: npx wrangler d1 create belate
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["* * * * *"]
+
+# LIFF_ID is public and may be moved here instead of storing it as a secret.
+# [vars]
+# LIFF_ID = "YOUR_LIFF_ID"
