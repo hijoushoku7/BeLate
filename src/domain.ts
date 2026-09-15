@@ -12,12 +12,6 @@ export function validFine(base: number, per: number, max: number): boolean {
   return [base, per, max].every(Number.isFinite) && base >= 0 && per >= 0 && max >= base && max <= 100_000;
 }
 
-export const PRESETS = {
-  light: { baseFine: 100, perMin: 20, maxFine: 1000, label: 'ゆるめ' },
-  standard: { baseFine: 200, perMin: 50, maxFine: 3000, label: '標準' },
-  strict: { baseFine: 500, perMin: 100, maxFine: 5000, label: 'きつめ' },
-} as const;
-
 export function lateMinutes(meetAt: number, arrivedAt: number): number {
   return Math.max(0, Math.ceil((arrivedAt - meetAt) / 60_000));
 }

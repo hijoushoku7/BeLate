@@ -1,6 +1,6 @@
 import type { Env, EventRow, LineEvent, LineMessage } from './types';
 import { activeEvent, ensureUser, eventById, groupSettings, participant, participants, upsertUser } from './db';
-import { formatJst, LOCK_BEFORE_MS, PRESETS, shortcutTime } from './domain';
+import { formatJst, LOCK_BEFORE_MS, shortcutTime } from './domain';
 import { buttons, canPush, postbackAction, profile, quick, reply as lineReply, text, uriAction } from './line';
 import { settle, settlementText, storedSettlement, type Settlement } from './settlement';
 
@@ -17,7 +17,7 @@ function settlementMessages(env: Env, eventId: string, resolved: Settlement): Li
 const HELP = `BeLateの使い方
 
 ① 集合場所をグループに位置情報で送る（＋ → 位置情報）
-② 出てきたボタンで日時と罰金を選ぶ（送った人が幹事）
+② 出てきたボタンで日時を選ぶ（送った人が幹事。罰金はグループ設定が自動で使われます）
 ③ 参加する人は「参加」ボタン。Botを友だち追加していない人は参加できません
 ④ 集合時刻を過ぎたら、届いたリンクから到着報告（150m以内で到着判定）
 
@@ -70,8 +70,11 @@ function creationTimeMessage(eventId: string, now: number): LineMessage {
 async function handleJoin(env: Env, event: LineEvent): Promise<void> {
   const gid = groupId(event); if (!gid) return;
   await env.DB.prepare('INSERT OR IGNORE INTO groups(line_group_id,doubt_enabled,created_at) VALUES(?,1,?)').bind(gid, Date.now()).run();
+  const defaults = await groupSettings(env.DB, gid);
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP), buttons('ダウト機能（遅刻するかを賭ける）を使いますか？ 結果は精算時に全公開されます。', [
     postbackAction('使う', `action=group_doubt&group=${gid}&value=1`), postbackAction('使わない', `action=group_doubt&group=${gid}&value=0`),
+  ]), buttons(`罰金はこのグループの設定が毎回自動で使われます。\n現在: ${defaults.base_fine}円 + ${defaults.per_min}円/分（上限${defaults.max_fine}円）\n変えたいときは今ここで設定してください（あとから「設定」でも変更できます）。`, [
+    uriAction('罰金設定を変える', groupSettingsUrl(env, gid)),
   ])]);
 }
 
@@ -79,28 +82,25 @@ async function handleLocation(env: Env, event: LineEvent): Promise<void> {
   const gid = groupId(event), uid = userId(event), message = event.message;
   if (!gid || !uid || message?.latitude == null || message.longitude == null) return;
   if (await activeEvent(env.DB, gid)) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('このグループには進行中のイベントがあります。精算後に作成してください。')]); return; }
-  const name = await knownName(env, uid);
+  await knownName(env, uid);
   await env.DB.prepare('INSERT OR IGNORE INTO groups(line_group_id,doubt_enabled,created_at) VALUES(?,1,?)').bind(gid, Date.now()).run();
   const id = crypto.randomUUID();
   const defaults = await groupSettings(env.DB, gid);
   try {
     await env.DB.prepare(`INSERT INTO events(id,group_id,owner_id,place_lat,place_lng,place_name,meet_at,state,base_fine,per_min,max_fine,created_at)
       VALUES(?,?,?,?,?,?,0,'draft',?,?,?,?)`).bind(id, gid, uid, message.latitude, message.longitude, message.title || message.address || '集合場所', defaults.base_fine, defaults.per_min, defaults.max_fine, Date.now()).run();
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(`${name}さんがイベントを作成中です。`), creationTimeMessage(id, Date.now())]);
+    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [creationTimeMessage(id, Date.now())]);
   } catch (error) {
     console.error(error); await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('イベントを作成できませんでした。進行中のイベントがないか確認してください。')]);
   }
 }
 
-async function finalizeEvent(env: Env, event: LineEvent, row: EventRow, presetName: string): Promise<void> {
-  const uid = userId(event); if (!uid || uid !== row.owner_id || row.state !== 'draft') { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('幹事だけが設定できます。')]); return; }
-  // 'default' keeps what the draft already carries: the group's default settings.
-  const preset = PRESETS[presetName as keyof typeof PRESETS]
-    ?? { baseFine: row.base_fine, perMin: row.per_min, maxFine: row.max_fine, label: 'デフォルト' };
-  await env.DB.prepare("UPDATE events SET state='open',base_fine=?,per_min=?,max_fine=? WHERE id=? AND state='draft'").bind(preset.baseFine, preset.perMin, preset.maxFine, row.id).run();
+async function finalizeEvent(env: Env, event: LineEvent, row: EventRow): Promise<void> {
+  // The draft already carries the group's default fine settings, so just open it.
+  await env.DB.prepare("UPDATE events SET state='open' WHERE id=? AND state='draft'").bind(row.id).run();
   const url = liffUrl(env, row.id);
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [
-    text(`イベントを作成しました！\n集合: ${formatJst(row.meet_at)}\n場所: ${row.place_name ?? '指定地点'}\n罰金: ${preset.label}（${preset.baseFine}円 + ${preset.perMin}円/分、上限${preset.maxFine}円）\n参加・ダウト締切: 集合2時間前`),
+    text(`イベントを作成しました！\n集合: ${formatJst(row.meet_at)}\n場所: ${row.place_name ?? '指定地点'}\n罰金: ${row.base_fine}円 + ${row.per_min}円/分（上限${row.max_fine}円）\n参加・ダウト締切: 集合2時間前`),
     buttons('参加する人はボタンを押してください', [postbackAction('参加', `action=join_event&id=${row.id}`), postbackAction('欠席', `action=absent&id=${row.id}`), uriAction('到着・位置報告', url), uriAction('詳細設定', liffUrl(env, row.id, 'settings'))]),
   ]);
 }
@@ -181,14 +181,8 @@ async function handlePostback(env: Env, event: LineEvent): Promise<void> {
     const raw = q.get('value') ?? event.postback?.params?.datetime; const meetAt = raw && /^\d+$/.test(raw) ? Number(raw) : Date.parse(`${raw}:00+09:00`);
     if (!meetAt || meetAt <= Date.now()) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('未来の日時を選んでください。')]); return; }
     await env.DB.prepare('UPDATE events SET meet_at=? WHERE id=?').bind(meetAt, id).run();
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [buttons(`${formatJst(meetAt)} 集合。罰金設定を選んでください`, [
-      postbackAction(`デフォルト（${row.base_fine}円+${row.per_min}円/分）`, `action=finalize&id=${id}&preset=default`),
-      postbackAction('ゆるめ', `action=finalize&id=${id}&preset=light`),
-      postbackAction('きつめ', `action=finalize&id=${id}&preset=strict`),
-      uriAction('細かく設定', liffUrl(env, id, 'settings')),
-    ])]); return;
+    await finalizeEvent(env, event, { ...row, meet_at: meetAt }); return;
   }
-  if (action === 'finalize') { await finalizeEvent(env, event, row, q.get('preset') || 'default'); return; }
   if (action === 'join_event') { await joinEvent(env, event, row); return; }
   if (action === 'absent') { await absent(env, event, row); return; }
   if (action === 'bet_target') {
