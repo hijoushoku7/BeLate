@@ -45,6 +45,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 form{display:flex;flex-direction:column;gap:12px}
 label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;color:var(--muted)}
 input{padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--ground);color:var(--ink)}
+/* iOS keeps datetime-local at its intrinsic width and spills out of the card. */
+input[type=datetime-local]{display:block;min-width:0;min-height:48px;-webkit-appearance:none;appearance:none;text-align:left}
 .foot{margin:0;text-align:center;font-size:13px;color:var(--muted)}
 .hidden{display:none!important}
 .meterbar{margin-top:10px;height:10px;border-radius:999px;background:var(--ground);overflow:hidden}
