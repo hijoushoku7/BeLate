@@ -2,13 +2,16 @@ import type { Env, EventRow, LineEvent, LineMessage } from './types';
 import { activeEvent, ensureUser, eventById, participant, participants, upsertUser } from './db';
 import { formatJst, LOCK_BEFORE_MS, PRESETS, shortcutTime } from './domain';
 import { buttons, canPush, postbackAction, profile, quick, reply as lineReply, text, uriAction } from './line';
-import { settle, settlementText } from './settlement';
+import { settle, settlementText, storedSettlement, type Settlement } from './settlement';
 
 function groupId(event: LineEvent): string | null {
   return event.source.type === 'group' ? event.source.groupId : null;
 }
 function userId(event: LineEvent): string | null { return 'userId' in event.source ? event.source.userId ?? null : null; }
 function liffUrl(env: Env, eventId: string, mode = 'arrive'): string { return `https://liff.line.me/${env.LIFF_ID}?e=${encodeURIComponent(eventId)}&mode=${mode}`; }
+function settlementMessages(env: Env, eventId: string, resolved: Settlement): LineMessage[] {
+  return [text(settlementText(resolved)), buttons('Webで見やすく確認できます', [uriAction('Webで見る', liffUrl(env, eventId, 'settlement'))])];
+}
 
 const HELP = `BeLateの使い方
 
@@ -152,34 +155,12 @@ async function finish(env: Env, lineEvent: LineEvent, command: string): Promise<
       await env.DB.prepare('DELETE FROM events WHERE id=?').bind(row.id).run();
       await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('作成途中のイベントを破棄しました。')]); return;
     }
-    const resolved = row.state === 'settled' ? await buildStoredSettlement(env, row.id) : await settle(env.DB, row.id);
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text(settlementText(resolved))]); return;
+    const resolved = row.state === 'settled' ? await storedSettlement(env.DB, row.id) : await settle(env.DB, row.id);
+    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, settlementMessages(env, row.id, resolved)); return;
   }
   if (row.state !== 'settled') { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('イベントはまだ精算されていません。罰金カウントは継続中です。')]); return; }
-  const resolved = await buildStoredSettlement(env, row.id);
-  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text(settlementText(resolved))]);
-}
-
-async function buildStoredSettlement(env: Env, eventId: string) {
-  const domain = await import('./domain');
-  const people = await participants(env.DB, eventId); const names = new Map(people.map(p => [p.user_id, p.display_name || p.user_id.slice(-6)]));
-  const bets = (await env.DB.prepare(`SELECT b.*,bu.display_name bettor_name,tu.display_name target_name FROM bets b JOIN users bu ON bu.user_id=b.bettor_id JOIN users tu ON tu.user_id=b.target_id WHERE event_id=?`).bind(eventId).all<Record<string, string | number | null>>()).results;
-  const transfers = domain.fineTransfers(people), lines: string[] = [];
-  const targets = new Map<string, typeof bets>();
-  bets.forEach(b => targets.set(String(b.target_id), [...(targets.get(String(b.target_id)) ?? []), b]));
-  for (const [targetId, targetBets] of targets) {
-    const winners = targetBets.filter(b => Number(b.payout) >= 0), losers = targetBets.filter(b => Number(b.payout) < 0);
-    lines.push(`${names.get(targetId) ?? targetId}の遅刻に ${targetBets.length}人\n 当たり: ${winners.map(b => b.bettor_name).join('、') || 'なし'} / はずれ: ${losers.map(b => b.bettor_name).join('、') || 'なし'}`);
-  }
-  for (const targetBets of targets.values()) {
-    if (!targetBets.some(bet => Number(bet.payout) > 0)) continue;
-    for (const bet of targetBets) {
-      const payout = Number(bet.payout ?? 0);
-      if (payout < 0) transfers.push({ from: String(bet.bettor_id), to: '__doubt_pool__', amount: -payout });
-      if (payout > 0) transfers.push({ from: '__doubt_pool__', to: String(bet.bettor_id), amount: payout });
-    }
-  }
-  return { doubtText: lines.join('\n') || 'ダウトはありませんでした', debts: domain.netDebts(transfers), names };
+  const resolved = await storedSettlement(env.DB, row.id);
+  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, settlementMessages(env, row.id, resolved));
 }
 
 async function handlePostback(env: Env, event: LineEvent): Promise<void> {

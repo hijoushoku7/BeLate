@@ -3,13 +3,21 @@ import type { Env } from './types';
 import { activeEvent, ensureUser, eventById, participant, participants } from './db';
 import { ARRIVAL_RADIUS_M, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS } from './domain';
 import { buttons, postbackAction, text, uriAction, verifyIdToken } from './line';
+import { storedSettlement } from './settlement';
 
 export const api = new Hono<{ Bindings: Env }>();
 
 api.get('/events/:id', async c => {
   const event = await eventById(c.env.DB, c.req.param('id'));
   if (!event) return c.json({ error: 'イベントが見つかりません' }, 404);
-  return c.json({ id: event.id, placeName: event.place_name, meetAt: event.meet_at, state: event.state, baseFine: event.base_fine, perMin: event.per_min, maxFine: event.max_fine });
+  const people = (await c.env.DB.prepare(`SELECT u.display_name,p.status,p.arrived_at,p.fine,
+    (SELECT distance_m FROM reports r WHERE r.event_id=p.event_id AND r.user_id=p.user_id ORDER BY r.reported_at DESC LIMIT 1) distance_m
+    FROM participants p JOIN users u ON u.user_id=p.user_id WHERE p.event_id=? AND p.status='joining' ORDER BY p.joined_at`)
+    .bind(event.id).all<{ display_name: string | null; status: string; arrived_at: number | null; fine: number | null; distance_m: number | null }>()).results;
+  return c.json({
+    id: event.id, placeName: event.place_name, meetAt: event.meet_at, state: event.state, baseFine: event.base_fine, perMin: event.per_min, maxFine: event.max_fine,
+    participants: people.map(p => ({ name: p.display_name, arrived: p.arrived_at != null, fine: p.fine, distance: p.distance_m })),
+  });
 });
 
 api.post('/arrive', async c => {
@@ -76,5 +84,11 @@ api.get('/settlement/:id', async c => {
   const event = await eventById(c.env.DB, c.req.param('id')); if (!event) return c.json({ error: 'not found' }, 404);
   if (event.state !== 'settled') return c.json({ error: '未精算です' }, 409);
   const people = await participants(c.env.DB, event.id);
-  return c.json({ eventId: event.id, participants: people.map(p => ({ name: p.display_name, lateMinutes: p.late_minutes, fine: p.fine })) });
+  const resolved = await storedSettlement(c.env.DB, event.id);
+  return c.json({
+    eventId: event.id,
+    participants: people.map(p => ({ name: p.display_name, lateMinutes: p.late_minutes, fine: p.fine })),
+    doubtText: resolved.doubtText,
+    debts: resolved.debts.map(d => ({ from: resolved.names.get(d.from) ?? d.from, to: resolved.names.get(d.to) ?? d.to, amount: d.amount })),
+  });
 });

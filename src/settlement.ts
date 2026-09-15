@@ -51,6 +51,30 @@ export async function settle(db: D1Database, eventId: string, now = Date.now()):
   return { doubtText: resultLines.length ? resultLines.join('\n') : 'ダウトはありませんでした', debts: netDebts(transfers), names };
 }
 
+export async function storedSettlement(db: D1Database, eventId: string): Promise<Settlement> {
+  const people = await participants(db, eventId);
+  const names = new Map(people.map(p => [p.user_id, p.display_name || p.user_id.slice(-6)]));
+  const bets = (await db.prepare(`SELECT b.*,bu.display_name bettor_name,tu.display_name target_name
+    FROM bets b JOIN users bu ON bu.user_id=b.bettor_id JOIN users tu ON tu.user_id=b.target_id WHERE event_id=?`)
+    .bind(eventId).all<Record<string, string | number | null>>()).results;
+  const transfers = fineTransfers(people), lines: string[] = [];
+  const targets = new Map<string, typeof bets>();
+  bets.forEach(b => targets.set(String(b.target_id), [...(targets.get(String(b.target_id)) ?? []), b]));
+  for (const [targetId, targetBets] of targets) {
+    const winners = targetBets.filter(b => Number(b.payout) >= 0), losers = targetBets.filter(b => Number(b.payout) < 0);
+    lines.push(`${names.get(targetId) ?? targetId}の遅刻に ${targetBets.length}人\n 当たり: ${winners.map(b => b.bettor_name).join('、') || 'なし'} / はずれ: ${losers.map(b => b.bettor_name).join('、') || 'なし'}`);
+  }
+  for (const targetBets of targets.values()) {
+    if (!targetBets.some(bet => Number(bet.payout) > 0)) continue;
+    for (const bet of targetBets) {
+      const payout = Number(bet.payout ?? 0);
+      if (payout < 0) transfers.push({ from: String(bet.bettor_id), to: '__doubt_pool__', amount: -payout });
+      if (payout > 0) transfers.push({ from: '__doubt_pool__', to: String(bet.bettor_id), amount: payout });
+    }
+  }
+  return { doubtText: lines.join('\n') || 'ダウトはありませんでした', debts: netDebts(transfers), names };
+}
+
 export function settlementText(result: Settlement): string {
   const lines = result.debts.map(d => `${result.names.get(d.from) ?? d.from} → ${result.names.get(d.to) ?? d.to}  ${d.amount.toLocaleString('ja-JP')}円`);
   return `【ダウト結果】\n${result.doubtText}\n\n【精算】\n${lines.join('\n') || '支払いはありません'}\n支払いは各自でお願いします`;

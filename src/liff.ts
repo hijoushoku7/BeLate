@@ -45,6 +45,16 @@ label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;
 input{padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--ground);color:var(--ink)}
 .foot{margin:0;text-align:center;font-size:12px;color:var(--muted)}
 .hidden{display:none!important}
+.meterbar{margin-top:10px;height:10px;border-radius:999px;background:var(--ground);overflow:hidden}
+.meterfill{height:100%;background:var(--accent);border-radius:999px;transition:width .3s}
+.meterbar[data-full="1"] .meterfill{background:var(--warn)}
+.meterval{margin:8px 0 0;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.roster{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.roster li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+.roster .name{font-weight:700}
+.roster .sub{color:var(--muted);font-size:12px}
+.roster .amount{font-variant-numeric:tabular-nums;font-weight:700}
+.roster [data-arrived="1"] .amount{color:var(--accent-ink)}
 </style>
 </head><body><main>
 <div class="topbar"><span class="mark">BeLate</span><span id="state" class="pill">接続中</span></div>
@@ -53,6 +63,7 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
   <p id="when" class="when"></p>
   <div id="count" class="count"><b id="countValue">--</b><span id="countLabel">集合まで</span></div>
   <p id="rule" class="rule"></p>
+  <div id="meter" class="hidden"><p class="eyebrow" style="margin-top:16px">現在の罰金</p><div id="meterBar" class="meterbar"><div id="meterFill" class="meterfill" style="width:0%"></div></div><p id="meterValue" class="meterval">0円</p></div>
 </section>
 <div id="status" class="card msg">読み込み中…</div>
 <section id="report" class="actions hidden">
@@ -67,6 +78,8 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
   <label>上限（円）<input id="max" type="number" min="0" required></label>
   <button>設定を保存</button>
 </form>
+<section id="roster" class="card hidden"><p class="eyebrow">参加者</p><ul id="rosterList" class="roster"></ul></section>
+<section id="settle" class="card hidden"><p class="eyebrow">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">支払い</p><ul id="settleDebts" class="roster"></ul></section>
 <p class="foot">集合地点から150m以内で到着になります</p>
 </main>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
@@ -74,7 +87,27 @@ const LIFF_ID=${safeId}, raw=new URLSearchParams(location.search), qs=new URLSea
 const $=id=>document.getElementById(id), status=$('status'), report=$('report'), settings=$('settings');
 function say(message,tone){status.textContent=message;status.dataset.tone=tone||'';status.classList.remove('hidden')}
 function fmt(ms){const m=Math.floor(Math.abs(ms)/60000);return (m>=60?Math.floor(m/60)+'時間'+(m%60)+'分':m+'分')}
-function tick(){if(!eventData)return;const left=eventData.meetAt-Date.now();$('countValue').textContent=fmt(left);$('countLabel').textContent=left>=0?'集合まで':'集合から経過';$('count').dataset.late=left<0?'1':'0'}
+function currentFine(){const minutes=Math.max(0,Math.ceil((Date.now()-eventData.meetAt)/60000));return minutes===0?0:Math.min(eventData.baseFine+eventData.perMin*minutes,eventData.maxFine)}
+function tick(){
+  if(!eventData)return;
+  const left=eventData.meetAt-Date.now();
+  $('countValue').textContent=fmt(left);$('countLabel').textContent=left>=0?'集合まで':'集合から経過';$('count').dataset.late=left<0?'1':'0';
+  if(left<0&&['locked','running'].includes(eventData.state)){
+    const fine=currentFine();
+    $('meter').classList.remove('hidden');
+    $('meterFill').style.width=Math.round(fine/eventData.maxFine*100)+'%';
+    $('meterBar').dataset.full=fine>=eventData.maxFine?'1':'0';
+    $('meterValue').textContent=fine.toLocaleString('ja-JP')+'円';
+  }else $('meter').classList.add('hidden');
+}
+function renderRoster(people){
+  if(!people||!people.length)return;
+  $('rosterList').innerHTML=people.map(p=>{
+    const status=p.arrived?'到着済み':(p.distance!=null?'約'+p.distance+'m':'未報告');
+    return '<li data-arrived="'+(p.arrived?1:0)+'"><span><span class="name">'+(p.name||'参加者')+'</span><br><span class="sub">'+status+'</span></span><span class="amount">'+(p.fine!=null?p.fine.toLocaleString('ja-JP')+'円':'--')+'</span></li>';
+  }).join('');
+  $('roster').classList.remove('hidden');
+}
 async function json(url,opts){const r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error||'通信エラー');return j}
 async function init(){try{
   await liff.init({liffId:LIFF_ID});
@@ -88,8 +121,15 @@ async function init(){try{
   $('event').classList.remove('hidden');
   $('state').textContent={draft:'作成中',open:'参加受付中',locked:'締切済み',running:'カウント中',settled:'精算済み'}[eventData.state]||eventData.state;
   $('state').dataset.live=eventData.state==='running'?'1':'0';
-  tick();setInterval(tick,30000);
-  if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
+  tick();setInterval(tick,15000);
+  renderRoster(eventData.participants);
+  if(mode==='settlement'){
+    if(eventData.state!=='settled')say('まだ精算されていません。');
+    else{const s=await json('/api/settlement/'+encodeURIComponent(eventId));
+      $('settleDoubt').textContent=s.doubtText;
+      $('settleDebts').innerHTML=s.debts.length?s.debts.map(d=>'<li><span class="name">'+d.from+' → '+d.to+'</span><span class="amount">'+d.amount.toLocaleString('ja-JP')+'円</span></li>').join(''):'<li>支払いはありません</li>';
+      $('settle').classList.remove('hidden');say('精算結果です。支払いは各自でお願いします。')}
+  }else if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
   else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
 }catch(e){say(e.message,'error')}}
 function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
