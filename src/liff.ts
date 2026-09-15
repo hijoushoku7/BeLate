@@ -122,7 +122,7 @@ async function init(){try{
   $('state').textContent={draft:'作成中',open:'参加受付中',locked:'締切済み',running:'カウント中',settled:'精算済み'}[eventData.state]||eventData.state;
   $('state').dataset.live=eventData.state==='running'?'1':'0';
   tick();setInterval(tick,15000);
-  renderRoster(eventData.participants);
+  if(mode!=='settlement')renderRoster(eventData.participants);
   if(mode==='settlement'){
     if(eventData.state!=='settled')say('まだ精算されていません。');
     else{const s=await json('/api/settlement/'+encodeURIComponent(eventId));
