@@ -107,8 +107,6 @@ api.post('/group-settings', async c => {
   await c.env.DB.prepare(`INSERT INTO groups(line_group_id,doubt_enabled,created_at,base_fine,per_min,max_fine) VALUES(?,1,?,?,?,?)
     ON CONFLICT(line_group_id) DO UPDATE SET base_fine=excluded.base_fine,per_min=excluded.per_min,max_fine=excluded.max_fine`)
     .bind(b.groupId, Date.now(), base, per, max).run();
-  await c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)')
-    .bind(b.groupId, JSON.stringify(text(`デフォルトの罰金設定を変更しました。\n${base}円 + ${per}円/分（上限${max}円）\n次に作るイベントから使われます。`)), Date.now()).run();
   return c.json({ ok: true, message: `保存しました: ${base}円 + ${per}円/分（上限${max}円）` });
 });
 
