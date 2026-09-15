@@ -41,6 +41,10 @@ export async function canPush(token: string, userId: string): Promise<boolean> {
   try { await profile(token, userId); return true; } catch { return false; }
 }
 
+export async function isGroupMember(token: string, groupId: string, userId: string): Promise<boolean> {
+  try { await call(`/group/${encodeURIComponent(groupId)}/member/${encodeURIComponent(userId)}`, token, undefined, 'GET'); return true; } catch { return false; }
+}
+
 export async function verifyIdToken(idToken: string, liffId: string): Promise<string | null> {
   const clientId = liffId.split('-')[0];
   if (!idToken || !clientId || !/^\d+$/.test(clientId)) return null;

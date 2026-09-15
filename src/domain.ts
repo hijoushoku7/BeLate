@@ -5,6 +5,13 @@ export const LOCK_BEFORE_MS = 5 * 60 * 1000; // ponytail: temporary test value, 
 export const AUTO_SETTLE_MS = 3 * 60 * 60 * 1000;
 export const ARRIVAL_RADIUS_M = 150;
 
+export const DEFAULT_FINE = { baseFine: 200, perMin: 50, maxFine: 3000 } as const;
+
+// Shared by the per-event settings and the group defaults so both reject the same nonsense.
+export function validFine(base: number, per: number, max: number): boolean {
+  return [base, per, max].every(Number.isFinite) && base >= 0 && per >= 0 && max >= base && max <= 100_000;
+}
+
 export const PRESETS = {
   light: { baseFine: 100, perMin: 20, maxFine: 1000, label: 'ゆるめ' },
   standard: { baseFine: 200, perMin: 50, maxFine: 3000, label: '標準' },

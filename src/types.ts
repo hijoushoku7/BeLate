@@ -13,6 +13,10 @@ export interface EventRow {
   per_min: number; max_fine: number; created_at: number; settled_at: number | null;
 }
 
+export interface GroupRow {
+  line_group_id: string; doubt_enabled: number; base_fine: number; per_min: number; max_fine: number;
+}
+
 export interface ParticipantRow {
   event_id: string; user_id: string; display_name: string | null; status: 'joining' | 'absent';
   arrived_at: number | null; late_minutes: number | null; fine: number | null;

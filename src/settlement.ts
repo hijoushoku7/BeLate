@@ -9,12 +9,22 @@ export async function settle(db: D1Database, eventId: string, now = Date.now()):
   const people = await participants(db, eventId);
   const names = new Map(people.map(p => [p.user_id, p.display_name || p.user_id.slice(-6)]));
 
-  const updates: D1PreparedStatement[] = [];
-  for (const p of people.filter(p => p.status === 'joining' && p.arrived_at == null)) {
-    updates.push(db.prepare('UPDATE participants SET late_minutes=180,fine=? WHERE event_id=? AND user_id=? AND arrived_at IS NULL').bind(event.max_fine, eventId, p.user_id));
-    p.late_minutes = 180; p.fine = event.max_fine;
+  // Settling before the meeting time means the event was cancelled in advance: nobody was late, so no fines
+  // (and no-shows must not be treated as 180-minute latecomers) and the unresolved doubts are void.
+  const cancelledEarly = now < event.meet_at;
+  if (cancelledEarly) {
+    await db.batch([
+      db.prepare('UPDATE participants SET late_minutes=NULL,fine=0 WHERE event_id=?').bind(eventId),
+      db.prepare('DELETE FROM bets WHERE event_id=?').bind(eventId),
+    ]);
+    people.forEach(p => { p.late_minutes = null; p.fine = 0; });
+  } else {
+    const updates = people.filter(p => p.status === 'joining' && p.arrived_at == null).map(p => {
+      p.late_minutes = 180; p.fine = event.max_fine;
+      return db.prepare('UPDATE participants SET late_minutes=180,fine=? WHERE event_id=? AND user_id=? AND arrived_at IS NULL').bind(event.max_fine, eventId, p.user_id);
+    });
+    if (updates.length) await db.batch(updates);
   }
-  if (updates.length) await db.batch(updates);
 
   const bets = (await db.prepare(`SELECT b.*, bu.display_name bettor_name, tu.display_name target_name
     FROM bets b JOIN users bu ON bu.user_id=b.bettor_id JOIN users tu ON tu.user_id=b.target_id WHERE event_id=?`)

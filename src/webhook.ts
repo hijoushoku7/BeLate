@@ -1,5 +1,5 @@
 import type { Env, EventRow, LineEvent, LineMessage } from './types';
-import { activeEvent, ensureUser, eventById, participant, participants, upsertUser } from './db';
+import { activeEvent, ensureUser, eventById, groupSettings, participant, participants, upsertUser } from './db';
 import { formatJst, LOCK_BEFORE_MS, PRESETS, shortcutTime } from './domain';
 import { buttons, canPush, postbackAction, profile, quick, reply as lineReply, text, uriAction } from './line';
 import { settle, settlementText, storedSettlement, type Settlement } from './settlement';
@@ -9,6 +9,7 @@ function groupId(event: LineEvent): string | null {
 }
 function userId(event: LineEvent): string | null { return 'userId' in event.source ? event.source.userId ?? null : null; }
 function liffUrl(env: Env, eventId: string, mode = 'arrive'): string { return `https://liff.line.me/${env.LIFF_ID}?e=${encodeURIComponent(eventId)}&mode=${mode}`; }
+function groupSettingsUrl(env: Env, gid: string): string { return `https://liff.line.me/${env.LIFF_ID}?g=${encodeURIComponent(gid)}&mode=group`; }
 function settlementMessages(env: Env, eventId: string, resolved: Settlement): LineMessage[] {
   return [text(settlementText(resolved)), buttons('Webで見やすく確認できます', [uriAction('Webで見る', liffUrl(env, eventId, 'settlement'))])];
 }
@@ -26,6 +27,7 @@ const HELP = `BeLateの使い方
 ・ヘルプ … この案内（@BeLate とメンションしてもOK）
 ・戦績 … 遅刻回数・平均遅刻・累計罰金
 ・精算 … 精算結果をもう一度表示
+・設定 … デフォルトの罰金設定を変更（Web画面）
 ・解散 … 幹事がイベントを締める`;
 
 // Mentions arrive inside the text ("@BeLate 戦績"), so strip them before matching keywords.
@@ -80,18 +82,21 @@ async function handleLocation(env: Env, event: LineEvent): Promise<void> {
   const name = await knownName(env, uid);
   await env.DB.prepare('INSERT OR IGNORE INTO groups(line_group_id,doubt_enabled,created_at) VALUES(?,1,?)').bind(gid, Date.now()).run();
   const id = crypto.randomUUID();
+  const defaults = await groupSettings(env.DB, gid);
   try {
     await env.DB.prepare(`INSERT INTO events(id,group_id,owner_id,place_lat,place_lng,place_name,meet_at,state,base_fine,per_min,max_fine,created_at)
-      VALUES(?,?,?,?,?,?,0,'draft',200,50,3000,?)`).bind(id, gid, uid, message.latitude, message.longitude, message.title || message.address || '集合場所', Date.now()).run();
+      VALUES(?,?,?,?,?,?,0,'draft',?,?,?,?)`).bind(id, gid, uid, message.latitude, message.longitude, message.title || message.address || '集合場所', defaults.base_fine, defaults.per_min, defaults.max_fine, Date.now()).run();
     await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(`${name}さんがイベントを作成中です。`), creationTimeMessage(id, Date.now())]);
   } catch (error) {
     console.error(error); await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('イベントを作成できませんでした。進行中のイベントがないか確認してください。')]);
   }
 }
 
-async function finalizeEvent(env: Env, event: LineEvent, row: EventRow, presetName: keyof typeof PRESETS): Promise<void> {
+async function finalizeEvent(env: Env, event: LineEvent, row: EventRow, presetName: string): Promise<void> {
   const uid = userId(event); if (!uid || uid !== row.owner_id || row.state !== 'draft') { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('幹事だけが設定できます。')]); return; }
-  const preset = PRESETS[presetName] ?? PRESETS.standard;
+  // 'default' keeps what the draft already carries: the group's default settings.
+  const preset = PRESETS[presetName as keyof typeof PRESETS]
+    ?? { baseFine: row.base_fine, perMin: row.per_min, maxFine: row.max_fine, label: 'デフォルト' };
   await env.DB.prepare("UPDATE events SET state='open',base_fine=?,per_min=?,max_fine=? WHERE id=? AND state='draft'").bind(preset.baseFine, preset.perMin, preset.maxFine, row.id).run();
   const url = liffUrl(env, row.id);
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [
@@ -155,8 +160,12 @@ async function finish(env: Env, lineEvent: LineEvent, command: string): Promise<
       await env.DB.prepare('DELETE FROM events WHERE id=?').bind(row.id).run();
       await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('作成途中のイベントを破棄しました。')]); return;
     }
+    const cancelledEarly = row.state !== 'settled' && Date.now() < row.meet_at;
     const resolved = row.state === 'settled' ? await storedSettlement(env.DB, row.id) : await settle(env.DB, row.id);
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, settlementMessages(env, row.id, resolved)); return;
+    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [
+      ...(cancelledEarly ? [text('集合前に解散したため、罰金とダウトはすべて無効になりました。')] : []),
+      ...settlementMessages(env, row.id, resolved),
+    ]); return;
   }
   if (row.state !== 'settled') { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('イベントはまだ精算されていません。罰金カウントは継続中です。')]); return; }
   const resolved = await storedSettlement(env.DB, row.id);
@@ -172,9 +181,14 @@ async function handlePostback(env: Env, event: LineEvent): Promise<void> {
     const raw = q.get('value') ?? event.postback?.params?.datetime; const meetAt = raw && /^\d+$/.test(raw) ? Number(raw) : Date.parse(`${raw}:00+09:00`);
     if (!meetAt || meetAt <= Date.now()) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('未来の日時を選んでください。')]); return; }
     await env.DB.prepare('UPDATE events SET meet_at=? WHERE id=?').bind(meetAt, id).run();
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [buttons(`${formatJst(meetAt)} 集合。罰金設定を選んでください`, [postbackAction('ゆるめ', `action=finalize&id=${id}&preset=light`), postbackAction('標準', `action=finalize&id=${id}&preset=standard`), postbackAction('きつめ', `action=finalize&id=${id}&preset=strict`), uriAction('細かく設定', liffUrl(env, id, 'settings'))])]); return;
+    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [buttons(`${formatJst(meetAt)} 集合。罰金設定を選んでください`, [
+      postbackAction(`デフォルト（${row.base_fine}円+${row.per_min}円/分）`, `action=finalize&id=${id}&preset=default`),
+      postbackAction('ゆるめ', `action=finalize&id=${id}&preset=light`),
+      postbackAction('きつめ', `action=finalize&id=${id}&preset=strict`),
+      uriAction('細かく設定', liffUrl(env, id, 'settings')),
+    ])]); return;
   }
-  if (action === 'finalize') { await finalizeEvent(env, event, row, (q.get('preset') || 'standard') as keyof typeof PRESETS); return; }
+  if (action === 'finalize') { await finalizeEvent(env, event, row, q.get('preset') || 'default'); return; }
   if (action === 'join_event') { await joinEvent(env, event, row); return; }
   if (action === 'absent') { await absent(env, event, row); return; }
   if (action === 'bet_target') {
@@ -201,6 +215,13 @@ export async function handleLineEvent(env: Env, event: LineEvent): Promise<void>
   if (value === '戦績') return stats(env, event);
   if (value === '精算' || value === '解散') return finish(env, event, value);
   if (value === 'ダウト') return doubtMenu(env, event);
+  if (value === '設定') {
+    if (!gid) return reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('設定はグループで送ってください。')]);
+    const defaults = await groupSettings(env.DB, gid);
+    return reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [buttons(
+      `現在のデフォルト罰金: ${defaults.base_fine}円 + ${defaults.per_min}円/分（上限${defaults.max_fine}円）`,
+      [uriAction('設定を変更する', groupSettingsUrl(env, gid))])]);
+  }
   if (value === 'ヘルプ' || value === 'help' || mentionedSelf) return reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP)]);
   await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, []);
 }

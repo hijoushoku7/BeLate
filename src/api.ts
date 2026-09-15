@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
-import { activeEvent, ensureUser, eventById, participant, participants } from './db';
-import { ARRIVAL_RADIUS_M, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS } from './domain';
-import { buttons, postbackAction, text, uriAction, verifyIdToken } from './line';
+import { activeEvent, ensureUser, eventById, groupSettings, participant, participants } from './db';
+import { ARRIVAL_RADIUS_M, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS, validFine } from './domain';
+import { buttons, isGroupMember, postbackAction, text, uriAction, verifyIdToken } from './line';
 import { settle, settlementText, storedSettlement } from './settlement';
 
 export const api = new Hono<{ Bindings: Env }>();
@@ -72,7 +72,7 @@ api.post('/settings', async c => {
   if (event.owner_id !== b.userId) return c.json({ error: '幹事だけが変更できます' }, 403);
   if (event.state === 'running' || event.state === 'settled') return c.json({ error: '開始後は変更できません' }, 409);
   const meetAt = Number(b.meetAt), base = Number(b.baseFine), per = Number(b.perMin), max = Number(b.maxFine);
-  if (![meetAt, base, per, max].every(Number.isFinite) || meetAt <= Date.now() || base < 0 || per < 0 || max < base || max > 100000) return c.json({ error: '設定値が不正です' }, 400);
+  if (!Number.isFinite(meetAt) || meetAt <= Date.now() || !validFine(base, per, max)) return c.json({ error: '設定値が不正です' }, 400);
   const changedTime = event.meet_at > 0 && event.meet_at !== meetAt;
   const wasLocked = event.state === 'locked';
   if (wasLocked && changedTime) await c.env.DB.prepare('DELETE FROM bets WHERE event_id=?').bind(event.id).run();
@@ -89,6 +89,27 @@ api.post('/settings', async c => {
     await c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)').bind(event.group_id, JSON.stringify(text(`集合時刻が ${formatJst(meetAt)} に変更されました。`)), Date.now()).run();
   }
   return c.json({ ok: true, message: `設定しました: ${formatJst(meetAt)}`, state: nextState });
+});
+
+api.get('/group/:id', async c => {
+  const group = await groupSettings(c.env.DB, c.req.param('id'));
+  return c.json({ baseFine: group.base_fine, perMin: group.per_min, maxFine: group.max_fine });
+});
+
+api.post('/group-settings', async c => {
+  const b = await c.req.json<{ groupId?: string; idToken?: string; baseFine?: number; perMin?: number; maxFine?: number }>();
+  if (!b.groupId || !b.idToken) return c.json({ error: 'groupId と IDトークンが必要です' }, 400);
+  const uid = await verifyIdToken(b.idToken, c.env.LIFF_ID);
+  if (!uid) return c.json({ error: 'LINE認証を確認できません' }, 401);
+  if (!(await isGroupMember(c.env.LINE_CHANNEL_ACCESS_TOKEN, b.groupId, uid))) return c.json({ error: 'このグループのメンバーだけが変更できます' }, 403);
+  const base = Number(b.baseFine), per = Number(b.perMin), max = Number(b.maxFine);
+  if (!validFine(base, per, max)) return c.json({ error: '設定値が不正です' }, 400);
+  await c.env.DB.prepare(`INSERT INTO groups(line_group_id,doubt_enabled,created_at,base_fine,per_min,max_fine) VALUES(?,1,?,?,?,?)
+    ON CONFLICT(line_group_id) DO UPDATE SET base_fine=excluded.base_fine,per_min=excluded.per_min,max_fine=excluded.max_fine`)
+    .bind(b.groupId, Date.now(), base, per, max).run();
+  await c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)')
+    .bind(b.groupId, JSON.stringify(text(`デフォルトの罰金設定を変更しました。\n${base}円 + ${per}円/分（上限${max}円）\n次に作るイベントから使われます。`)), Date.now()).run();
+  return c.json({ ok: true, message: `保存しました: ${base}円 + ${per}円/分（上限${max}円）` });
 });
 
 api.get('/settlement/:id', async c => {

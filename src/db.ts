@@ -1,4 +1,10 @@
-import type { EventRow, ParticipantRow } from './types';
+import type { EventRow, GroupRow, ParticipantRow } from './types';
+import { DEFAULT_FINE } from './domain';
+
+export async function groupSettings(db: D1Database, groupId: string): Promise<GroupRow> {
+  return (await db.prepare('SELECT * FROM groups WHERE line_group_id = ?').bind(groupId).first<GroupRow>())
+    ?? { line_group_id: groupId, doubt_enabled: 1, base_fine: DEFAULT_FINE.baseFine, per_min: DEFAULT_FINE.perMin, max_fine: DEFAULT_FINE.maxFine };
+}
 
 export async function eventById(db: D1Database, id: string): Promise<EventRow | null> {
   return db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRow>();

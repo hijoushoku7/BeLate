@@ -79,7 +79,7 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
   <button id="manual" class="ghost">位置が取れない（手動で申告）</button>
 </section>
 <form id="settings" class="card hidden">
-  <label>集合日時<input id="meet" type="datetime-local" required></label>
+  <label id="meetRow">集合日時<input id="meet" type="datetime-local" required></label>
   <label>初期金額（円）<input id="base" type="number" min="0" required></label>
   <label>1分あたり（円）<input id="per" type="number" min="0" required></label>
   <label>上限（円）<input id="max" type="number" min="0" required></label>
@@ -90,7 +90,7 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
 <p class="foot">集合地点から150m以内で到着になります</p>
 </main>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
-const LIFF_ID=${safeId}, raw=new URLSearchParams(location.search), qs=new URLSearchParams(raw.get('liff.state')?.replace(/^\\?/,'')??location.search), eventId=qs.get('e'), mode=qs.get('mode')||'arrive'; let profile,eventData;
+const LIFF_ID=${safeId}, raw=new URLSearchParams(location.search), qs=new URLSearchParams(raw.get('liff.state')?.replace(/^\\?/,'')??location.search), eventId=qs.get('e'), groupId=qs.get('g'), mode=qs.get('mode')||'arrive'; let profile,eventData;
 const $=id=>document.getElementById(id), status=$('status'), report=$('report'), settings=$('settings');
 function say(message,tone){status.textContent=message;status.dataset.tone=tone||'';status.classList.remove('hidden')}
 function fmt(ms){const m=Math.floor(Math.abs(ms)/60000);return (m>=60?Math.floor(m/60)+'時間'+(m%60)+'分':m+'分')}
@@ -122,6 +122,16 @@ async function init(){try{
   if(!liff.isLoggedIn()){liff.login();return}
   if(!liff.isInClient())throw Error('LINEアプリ内から開いてください');
   profile=await liff.getProfile();
+  if(mode==='group'){
+    if(!groupId)throw Error('グループが指定されていません');
+    const g=await json('/api/group/'+encodeURIComponent(groupId));
+    $('meetRow').classList.add('hidden');$('meet').required=false;
+    $('base').value=g.baseFine;$('per').value=g.perMin;$('max').value=g.maxFine;
+    settings.classList.remove('hidden');
+    $('state').textContent='グループ設定';
+    say('このグループのデフォルト罰金です。次に作るイベントから使われます。');
+    return;
+  }
   eventData=await json('/api/events/'+encodeURIComponent(eventId));
   $('place').textContent=eventData.placeName||'集合場所';
   $('when').textContent=new Date(eventData.meetAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'});
@@ -155,7 +165,11 @@ $('manual').onclick=e=>{if(!confirm('グループ内で確認する手動到着�
   const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),arrive:true,manual:true})});say(j.message);
 }catch(e){say(e.message,'error')}})};
 settings.onsubmit=e=>{e.preventDefault();busy(e.target.querySelector('button'),'保存中…',async()=>{try{
-  const j=await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date($('meet').value+'+09:00').getTime(),baseFine:+$('base').value,perMin:+$('per').value,maxFine:+$('max').value})});say(j.message);
+  const fines={baseFine:+$('base').value,perMin:+$('per').value,maxFine:+$('max').value};
+  const j=mode==='group'
+    ?await json('/api/group-settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({groupId,idToken:liff.getIDToken(),...fines})})
+    :await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date($('meet').value+'+09:00').getTime(),...fines})});
+  say(j.message);
 }catch(e){say(e.message,'error')}})};
 init();</script></body></html>`;
 }

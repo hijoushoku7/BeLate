@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { calculateFine, distanceMeters, lateMinutes, netDebts, shortcutTime } from '../src/domain';
+import { calculateFine, distanceMeters, lateMinutes, netDebts, shortcutTime, validFine } from '../src/domain';
 import { verifyIdToken, verifySignature } from '../src/line';
 import { liffHtml } from '../src/liff';
+import { settle } from '../src/settlement';
 import { commandText } from '../src/webhook';
 
 assert.equal(lateMinutes(1_000_000, 1_000_001), 1);
@@ -15,6 +16,13 @@ assert.ok(distanceMeters(35.681236, 139.767125, 35.682236, 139.767125) > 100);
 assert.deepEqual(netDebts([{ from: 'A', to: 'B', amount: 500 }, { from: 'B', to: 'C', amount: 300 }]), [{ from: 'A', to: 'B', amount: 200 }, { from: 'A', to: 'C', amount: 300 }]);
 const now = Date.UTC(2026, 8, 14, 8); // 17:00 JST
 assert.equal(new Date(shortcutTime(now, 0, 19)).toISOString(), '2026-09-14T10:00:00.000Z');
+
+assert.equal(validFine(200, 50, 3000), true);
+assert.equal(validFine(0, 0, 0), true);
+assert.equal(validFine(-1, 50, 3000), false);
+assert.equal(validFine(3000, 50, 200), false); // max below base
+assert.equal(validFine(200, 50, 100001), false);
+assert.equal(validFine(NaN, 50, 3000), false);
 
 const secret = 'test-secret', body = '{"events":[]}';
 const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -58,6 +66,9 @@ assert.match(liffSource, /liff\.state/);
   const plain = unwrap('?e=XYZ&mode=arrive');
   assert.equal(plain.get('e'), 'XYZ');
   assert.equal(plain.get('mode'), 'arrive');
+  const group = unwrap('?liff.state=%3Fg%3DC123%26mode%3Dgroup');
+  assert.equal(group.get('g'), 'C123');
+  assert.equal(group.get('mode'), 'group');
 }
 
 // The LIFF page is emitted as a template literal: an unescaped \n would break the inline script at parse time.
@@ -66,6 +77,7 @@ assert.match(liffSource, /liff\.state/);
   const inline = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
   assert.ok(inline.includes('liff.init'), 'inline LIFF script not found');
   assert.doesNotThrow(() => new Function(inline), 'emitted LIFF script must parse');
+  assert.match(inline, /\/api\/group-settings/); // group mode posts to the group endpoint, not the event one
 }
 
 // A mention arrives inside the text ("@BeLate 戦績"), so keyword matching must see the text without it.
@@ -74,6 +86,51 @@ assert.match(liffSource, /liff\.state/);
   assert.equal(commandText({ text: 'おい @BeLate', mention: { mentionees: [{ index: 3, length: 7 }] } }), 'おい');
   assert.equal(commandText({ text: '@A @BeLate 精算', mention: { mentionees: [{ index: 0, length: 2 }, { index: 3, length: 7 }] } }), '精算');
   assert.equal(commandText({ text: ' 戦績 ' }), '戦績');
+}
+
+
+// Cancelling an event before its meeting time must not turn everyone into a 180-minute latecomer.
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const sqlite = new DatabaseSync(':memory:');
+  for (const file of ['0001_initial', '0002_notification_budget', '0003_pending_group_notifications', '0004_group_fine_defaults'])
+    sqlite.exec(readFileSync(`migrations/${file}.sql`, 'utf8'));
+
+  type Row = Record<string, unknown>;
+  class Stmt {
+    constructor(private sql: string, private args: unknown[] = []) {}
+    bind(...args: unknown[]) { return new Stmt(this.sql, args); }
+    async first<T>() { return (sqlite.prepare(this.sql).get(...this.args as never[]) ?? null) as T | null; }
+    async all<T>() { return { results: sqlite.prepare(this.sql).all(...this.args as never[]) as T[] }; }
+    async run() { return { meta: { changes: Number(sqlite.prepare(this.sql).run(...this.args as never[]).changes) } }; }
+  }
+  const db = {
+    prepare: (sql: string) => new Stmt(sql),
+    batch: (statements: Stmt[]) => Promise.all(statements.map(s => s.run())),
+  } as unknown as D1Database;
+
+  const meetAt = Date.now() + 3_600_000;
+  sqlite.exec(`INSERT INTO groups(line_group_id,doubt_enabled,created_at) VALUES('G',1,0);
+    INSERT INTO users(user_id,display_name,is_friend,updated_at) VALUES('U1','あ',1,0),('U2','い',1,0);
+    INSERT INTO events(id,group_id,owner_id,place_lat,place_lng,meet_at,state,base_fine,per_min,max_fine,created_at)
+      VALUES('E','G','U1',35.0,139.0,${meetAt},'open',200,50,3000,0);
+    INSERT INTO participants(event_id,user_id,status,joined_at) VALUES('E','U1','joining',0),('E','U2','joining',0);
+    INSERT INTO bets(event_id,bettor_id,target_id,predicts_late,stake) VALUES('E','U1','U2',1,300);`);
+
+  const cancelled = await settle(db, 'E');
+  assert.deepEqual(cancelled.debts, [], '事前キャンセルでは支払いは発生しない');
+  const after = sqlite.prepare('SELECT user_id,late_minutes,fine FROM participants WHERE event_id=?').all('E') as Row[];
+  assert.deepEqual(after.map(r => [r.late_minutes, r.fine]), [[null, 0], [null, 0]], '事前キャンセルで遅刻扱いにしない');
+  assert.equal((sqlite.prepare('SELECT COUNT(*) n FROM bets').get() as Row).n, 0, '未確定のダウトは無効化される');
+
+  // Same event settled after the meeting time still charges the no-shows.
+  sqlite.exec("UPDATE events SET state='running' WHERE id='E'");
+  const late = await settle(db, 'E', meetAt + 10_000);
+  assert.deepEqual(
+    (sqlite.prepare('SELECT late_minutes,fine FROM participants WHERE event_id=?').all('E') as Row[]).map(r => [r.late_minutes, r.fine]),
+    [[180, 3000], [180, 3000]],
+  );
+  assert.deepEqual(late.debts, [], '全員遅刻なら受け取る側がいない');
 }
 
 console.log('self-check: all assertions passed');
