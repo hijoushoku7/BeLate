@@ -4,57 +4,64 @@ export function liffHtml(liffId: string): string {
 <style>
 :root{
   --ground:#ecefec;--surface:#fff;--ink:#10151a;--muted:#61716b;--line:#dde3df;
-  --accent:#06c755;--accent-ink:#04381f;--warn:#c2571a;--shadow:0 1px 2px #0f151a0f,0 12px 28px -18px #0f151a59;
+  --accent:#06c755;--accent-ink:#04381f;--warn:#c2571a;--danger:#d81e3f;--shadow:0 1px 2px #0f151a0f,0 12px 28px -18px #0f151a59;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --ground:#0c110f;--surface:#161c19;--ink:#eef2ef;--muted:#96a49d;--line:#273029;
-  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
+  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--danger:#ff5470;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
 }}
 :root[data-theme="dark"]{
   --ground:#0c110f;--surface:#161c19;--ink:#eef2ef;--muted:#96a49d;--line:#273029;
-  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
+  --accent:#22d46f;--accent-ink:#062e18;--warn:#f0a05a;--danger:#ff5470;--shadow:0 1px 2px #0006,0 14px 30px -20px #000c;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);
+body{margin:0;background:var(--ground);color:var(--ink);font-size:17px;
   font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
-  font-feature-settings:"palt";-webkit-text-size-adjust:100%}
+  font-feature-settings:"palt";-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
 main{max-width:480px;margin:0 auto;padding:16px;padding-block:20px 40px;display:flex;flex-direction:column;gap:14px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.mark{font-weight:800;letter-spacing:.14em;font-size:13px;text-transform:uppercase;color:var(--muted)}
-.pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.mark{font-weight:800;letter-spacing:.14em;font-size:14px;text-transform:uppercase;color:var(--muted)}
+.pill{font-size:13px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
 .pill[data-live="1"]{color:var(--accent-ink);background:var(--accent);border-color:transparent}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
-.eyebrow{margin:0 0 6px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-h1{margin:0;font-size:23px;line-height:1.3;text-wrap:balance}
-.when{margin:10px 0 0;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.eyebrow{margin:0 0 6px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{margin:0;font-size:25px;line-height:1.3;text-wrap:balance}
+.when{margin:10px 0 0;color:var(--muted);font-size:15px;font-variant-numeric:tabular-nums}
 .count{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:baseline;gap:8px}
-.count b{font-size:34px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.count span{font-size:13px;color:var(--muted)}
-.count[data-late="1"] b{color:var(--warn)}
-.rule{margin:12px 0 0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.msg{white-space:pre-wrap;line-height:1.65;font-size:15px}
-.msg[data-tone="error"]{border-color:var(--warn);color:var(--warn)}
+.count b{font-size:36px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.count span{font-size:14px;color:var(--muted)}
+.count[data-late="1"] b{color:var(--danger);animation:pulse 1.6s ease-in-out infinite}
+.rule{margin:12px 0 0;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.msg{white-space:pre-wrap;line-height:1.7;font-size:17px;font-weight:500}
+.msg[data-tone="error"]{border-color:var(--danger);color:var(--danger);font-weight:700}
 .actions{display:flex;flex-direction:column;gap:9px}
 button,input{font:inherit;width:100%}
-button{padding:15px;border:0;border-radius:13px;background:var(--accent);color:var(--accent-ink);font-weight:800;cursor:pointer}
+button{padding:16px;border:0;border-radius:13px;background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:17px;cursor:pointer;
+  transition:transform .1s ease,filter .1s ease,opacity .1s ease}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600}
-button:disabled{opacity:.5}
+button:active{transform:scale(.96);filter:brightness(.92)}
+button:disabled{opacity:.55;transform:none}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 form{display:flex;flex-direction:column;gap:12px}
-label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;color:var(--muted)}
 input{padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--ground);color:var(--ink)}
-.foot{margin:0;text-align:center;font-size:12px;color:var(--muted)}
+.foot{margin:0;text-align:center;font-size:13px;color:var(--muted)}
 .hidden{display:none!important}
 .meterbar{margin-top:10px;height:10px;border-radius:999px;background:var(--ground);overflow:hidden}
 .meterfill{height:100%;background:var(--accent);border-radius:999px;transition:width .3s}
-.meterbar[data-full="1"] .meterfill{background:var(--warn)}
-.meterval{margin:8px 0 0;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.meterbar[data-full="1"] .meterfill{background:var(--danger)}
+.meterval{margin:8px 0 0;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.meterbar[data-full="1"]+.meterval{color:var(--danger)}
 .roster{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.roster li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+.roster li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px;padding:2px 0}
 .roster .name{font-weight:700}
-.roster .sub{color:var(--muted);font-size:12px}
+.roster .sub{color:var(--muted);font-size:13px}
 .roster .amount{font-variant-numeric:tabular-nums;font-weight:700}
 .roster [data-arrived="1"] .amount{color:var(--accent-ink)}
+.roster li[data-late="1"]{border-left:3px solid var(--danger);padding-left:10px;margin-left:-13px}
+.roster li[data-late="1"] .name,.roster li[data-late="1"] .amount{color:var(--danger)}
+.roster li[data-late="1"] .sub{color:var(--danger);font-weight:700}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 </style>
 </head><body><main>
 <div class="topbar"><span class="mark">BeLate</span><span id="state" class="pill">接続中</span></div>
@@ -109,6 +116,7 @@ function renderRoster(people){
   $('roster').classList.remove('hidden');
 }
 async function json(url,opts){const r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error||'通信エラー');return j}
+async function busy(btn,label,fn){const original=btn.textContent;btn.disabled=true;btn.textContent=label;try{await fn()}finally{btn.disabled=false;btn.textContent=original}}
 async function init(){try{
   await liff.init({liffId:LIFF_ID});
   if(!liff.isLoggedIn()){liff.login();return}
@@ -128,7 +136,7 @@ async function init(){try{
     else{const s=await json('/api/settlement/'+encodeURIComponent(eventId));
       $('settlePeople').innerHTML=s.participants.map(p=>{
         const late=p.lateMinutes>0;
-        return '<li data-arrived="'+(late?0:1)+'"><span><span class="name">'+(p.name||'参加者')+'</span><br><span class="sub">'+(late?p.lateMinutes+'分遅刻':'定刻')+'</span></span><span class="amount">'+(p.fine!=null?p.fine.toLocaleString('ja-JP')+'円':'--')+'</span></li>';
+        return '<li data-late="'+(late?1:0)+'"><span><span class="name">'+(late?'⚠ ':'')+(p.name||'参加者')+'</span><br><span class="sub">'+(late?p.lateMinutes+'分遅刻':'定刻')+'</span></span><span class="amount">'+(p.fine!=null?p.fine.toLocaleString('ja-JP')+'円':'--')+'</span></li>';
       }).join('');
       $('settleDoubt').textContent=s.doubtText;
       $('settleDebts').innerHTML=s.debts.length?s.debts.map(d=>'<li><span class="name">'+d.from+' → '+d.to+'</span><span class="amount">'+d.amount.toLocaleString('ja-JP')+'円</span></li>').join(''):'<li>支払いはありません</li>';
@@ -137,17 +145,17 @@ async function init(){try{
   else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
 }catch(e){say(e.message,'error')}}
 function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
-function locate(arrive){say('位置情報を取得中…');navigator.geolocation.getCurrentPosition(async p=>{try{
+function locate(btn,arrive){busy(btn,'取得中…',()=>new Promise(resolve=>{say('位置情報を取得中…');navigator.geolocation.getCurrentPosition(async p=>{try{
   const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),lat:p.coords.latitude,lng:p.coords.longitude,arrive})});
   say(j.message);
-}catch(e){say(e.message,'error')}},e=>say('位置情報を取得できません: '+e.message,'error'),{enableHighAccuracy:true,timeout:15000})}
-$('arrive').onclick=()=>locate(true);
-$('share').onclick=()=>locate(false);
-$('manual').onclick=async()=>{if(!confirm('グループ内で確認する手動到着申告を送りますか？'))return;try{
+}catch(e){say(e.message,'error')}resolve()},e=>{say('位置情報を取得できません: '+e.message,'error');resolve()},{enableHighAccuracy:true,timeout:15000})}))}
+$('arrive').onclick=e=>locate(e.currentTarget,true);
+$('share').onclick=e=>locate(e.currentTarget,false);
+$('manual').onclick=e=>{if(!confirm('グループ内で確認する手動到着申告を送りますか？'))return;busy(e.currentTarget,'送信中…',async()=>{try{
   const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),arrive:true,manual:true})});say(j.message);
-}catch(e){say(e.message,'error')}};
-settings.onsubmit=async e=>{e.preventDefault();try{
+}catch(e){say(e.message,'error')}})};
+settings.onsubmit=e=>{e.preventDefault();busy(e.target.querySelector('button'),'保存中…',async()=>{try{
   const j=await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date($('meet').value+'+09:00').getTime(),baseFine:+$('base').value,perMin:+$('per').value,maxFine:+$('max').value})});say(j.message);
-}catch(e){say(e.message,'error')}};
+}catch(e){say(e.message,'error')}})};
 init();</script></body></html>`;
 }
