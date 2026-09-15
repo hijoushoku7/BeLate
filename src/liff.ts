@@ -79,7 +79,7 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
   <button>設定を保存</button>
 </form>
 <section id="roster" class="card hidden"><p class="eyebrow">参加者</p><ul id="rosterList" class="roster"></ul></section>
-<section id="settle" class="card hidden"><p class="eyebrow">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">支払い</p><ul id="settleDebts" class="roster"></ul></section>
+<section id="settle" class="card hidden"><p class="eyebrow">参加者</p><ul id="settlePeople" class="roster"></ul><p class="eyebrow" style="margin-top:16px">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">支払い</p><ul id="settleDebts" class="roster"></ul></section>
 <p class="foot">集合地点から150m以内で到着になります</p>
 </main>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
@@ -126,6 +126,10 @@ async function init(){try{
   if(mode==='settlement'){
     if(eventData.state!=='settled')say('まだ精算されていません。');
     else{const s=await json('/api/settlement/'+encodeURIComponent(eventId));
+      $('settlePeople').innerHTML=s.participants.map(p=>{
+        const late=p.lateMinutes>0;
+        return '<li data-arrived="'+(late?0:1)+'"><span><span class="name">'+(p.name||'参加者')+'</span><br><span class="sub">'+(late?p.lateMinutes+'分遅刻':'定刻')+'</span></span><span class="amount">'+(p.fine!=null?p.fine.toLocaleString('ja-JP')+'円':'--')+'</span></li>';
+      }).join('');
       $('settleDoubt').textContent=s.doubtText;
       $('settleDebts').innerHTML=s.debts.length?s.debts.map(d=>'<li><span class="name">'+d.from+' → '+d.to+'</span><span class="amount">'+d.amount.toLocaleString('ja-JP')+'円</span></li>').join(''):'<li>支払いはありません</li>';
       $('settle').classList.remove('hidden');say('精算結果です。支払いは各自でお願いします。')}
