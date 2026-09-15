@@ -78,6 +78,8 @@ assert.match(liffSource, /liff\.state/);
   assert.ok(inline.includes('liff.init'), 'inline LIFF script not found');
   assert.doesNotThrow(() => new Function(inline), 'emitted LIFF script must parse');
   assert.match(inline, /\/api\/group-settings/); // group mode posts to the group endpoint, not the event one
+  assert.match(inline, /toastTimer/); // saves must pop a toast, not only rewrite the status card
+  assert.match(html, /id="toast"/);
 }
 
 // A mention arrives inside the text ("@BeLate 戦績"), so keyword matching must see the text without it.

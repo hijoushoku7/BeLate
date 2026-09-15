@@ -61,6 +61,15 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
 .roster li[data-late="1"]{border-left:3px solid var(--danger);padding-left:10px;margin-left:-13px}
 .roster li[data-late="1"] .name,.roster li[data-late="1"] .amount{color:var(--danger)}
 .roster li[data-late="1"] .sub{color:var(--danger);font-weight:700}
+.toast{position:fixed;left:50%;bottom:22px;z-index:9;max-width:min(92vw,440px);padding:14px 18px;border-radius:14px;
+  background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:16px;line-height:1.5;text-align:center;white-space:pre-wrap;
+  box-shadow:0 10px 30px -10px #0f151a66;pointer-events:none;opacity:0;transform:translate(-50%,24px) scale(.96);
+  transition:opacity .22s ease,transform .22s cubic-bezier(.2,1.5,.4,1)}
+.toast[data-tone="error"]{background:var(--danger);color:#fff}
+.toast[data-show="1"]{opacity:1;transform:translate(-50%,0) scale(1)}
+button.done{background:var(--accent);animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(1)}35%{transform:scale(1.06)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.toast,button{transition-duration:.01ms}button.done{animation:none}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 </style>
 </head><body><main>
@@ -89,10 +98,14 @@ input{padding:12px;border:1px solid var(--line);border-radius:11px;background:va
 <section id="settle" class="card hidden"><p class="eyebrow">参加者</p><ul id="settlePeople" class="roster"></ul><p class="eyebrow" style="margin-top:16px">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">支払い</p><ul id="settleDebts" class="roster"></ul></section>
 <p class="foot">集合地点から150m以内で到着になります</p>
 </main>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
 const LIFF_ID=${safeId}, raw=new URLSearchParams(location.search), qs=new URLSearchParams(raw.get('liff.state')?.replace(/^\\?/,'')??location.search), eventId=qs.get('e'), groupId=qs.get('g'), mode=qs.get('mode')||'arrive'; let profile,eventData;
 const $=id=>document.getElementById(id), status=$('status'), report=$('report'), settings=$('settings');
-function say(message,tone){status.textContent=message;status.dataset.tone=tone||'';status.classList.remove('hidden')}
+let toastTimer,ready=false;
+// Only user actions get a toast: the initial load already speaks through the status card.
+function toast(message,tone){if(!ready)return;const t=$('toast');t.textContent=message;t.dataset.tone=tone||'';t.dataset.show='1';clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.dataset.show='0',3600)}
+function say(message,tone){status.textContent=message;status.dataset.tone=tone||'';status.classList.remove('hidden');toast(message,tone)}
 function fmt(ms){const m=Math.floor(Math.abs(ms)/60000);return (m>=60?Math.floor(m/60)+'時間'+(m%60)+'分':m+'分')}
 function currentFine(){const minutes=Math.max(0,Math.ceil((Date.now()-eventData.meetAt)/60000));return minutes===0?0:Math.min(eventData.baseFine+eventData.perMin*minutes,eventData.maxFine)}
 function tick(){
@@ -116,7 +129,10 @@ function renderRoster(people){
   $('roster').classList.remove('hidden');
 }
 async function json(url,opts){const r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error||'通信エラー');return j}
-async function busy(btn,label,fn){const original=btn.textContent;btn.disabled=true;btn.textContent=label;try{await fn()}finally{btn.disabled=false;btn.textContent=original}}
+async function busy(btn,label,fn,done){const original=btn.textContent;btn.disabled=true;btn.textContent=label;status.dataset.tone='';
+  try{await fn()}finally{btn.disabled=false;
+    if(status.dataset.tone==='error'){btn.textContent=original}
+    else{btn.textContent=done||'✓ 完了';btn.classList.add('done');setTimeout(()=>{btn.textContent=original;btn.classList.remove('done')},1600)}}}
 async function init(){try{
   await liff.init({liffId:LIFF_ID});
   if(!liff.isLoggedIn()){liff.login();return}
@@ -153,7 +169,7 @@ async function init(){try{
       $('settle').classList.remove('hidden');say('精算結果です。支払いは各自でお願いします。')}
   }else if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
   else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
-}catch(e){say(e.message,'error')}}
+}catch(e){say(e.message,'error')}finally{ready=true}}
 function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
 function locate(btn,arrive){busy(btn,'取得中…',()=>new Promise(resolve=>{say('位置情報を取得中…');navigator.geolocation.getCurrentPosition(async p=>{try{
   const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),lat:p.coords.latitude,lng:p.coords.longitude,arrive})});
@@ -170,6 +186,6 @@ settings.onsubmit=e=>{e.preventDefault();busy(e.target.querySelector('button'),'
     ?await json('/api/group-settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({groupId,idToken:liff.getIDToken(),...fines})})
     :await json('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,userId:profile.userId,meetAt:new Date($('meet').value+'+09:00').getTime(),...fines})});
   say(j.message);
-}catch(e){say(e.message,'error')}})};
+}catch(e){say(e.message,'error')}},'✓ 保存しました')};
 init();</script></body></html>`;
 }
