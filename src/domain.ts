@@ -3,6 +3,7 @@ import type { ParticipantRow } from './types';
 export const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 export const LOCK_BEFORE_MS = 5 * 60 * 1000; // ponytail: temporary test value, restore to 2 * 60 * 60 * 1000 before real use
 export const LOCK_BEFORE_LABEL = LOCK_BEFORE_MS >= 3600000 ? `${LOCK_BEFORE_MS / 3600000}時間前` : `${LOCK_BEFORE_MS / 60000}分前`;
+export const NOTIFY_BEFORE_MS = 3 * 60 * 1000; // 集合時刻の3分前に通知
 export const AUTO_SETTLE_MS = 3 * 60 * 60 * 1000;
 export const ARRIVAL_RADIUS_M = 150;
 
