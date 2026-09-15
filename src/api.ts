@@ -43,8 +43,7 @@ api.post('/arrive', async c => {
     const notification = text(newlyArrived ? arrivalMessage : `${person.display_name ?? '参加者'}さん: 集合地点まで約${distance}m`);
     await c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)').bind(event.group_id, JSON.stringify(notification), Date.now()).run();
   }
-  const betProgress = await c.env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN predicts_late=1 THEN 1 ELSE 0 END) late_votes FROM bets WHERE event_id=? AND target_id=?`).bind(event.id, verifiedUserId).first<{ total: number; late_votes: number | null }>();
-  return c.json({ ok: true, arrived: shouldArrive, distance, message: arrivalMessage, doubtProgress: { total: betProgress?.total ?? 0, predictsLate: betProgress?.late_votes ?? 0 } });
+  return c.json({ ok: true, arrived: shouldArrive, distance, message: arrivalMessage });
 });
 
 api.post('/settings', async c => {

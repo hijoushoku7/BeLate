@@ -95,7 +95,7 @@ async function init(){try{
 function auth(){return {idToken:liff.getIDToken(),displayName:profile.displayName}}
 function locate(arrive){say('位置情報を取得中…');navigator.geolocation.getCurrentPosition(async p=>{try{
   const j=await json('/api/arrive',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId,...auth(),lat:p.coords.latitude,lng:p.coords.longitude,arrive})});
-  say(j.message+'\\n\\nあなたへのダウト: 遅刻する '+j.doubtProgress.predictsLate+' / 全'+j.doubtProgress.total+'件');
+  say(j.message);
 }catch(e){say(e.message,'error')}},e=>say('位置情報を取得できません: '+e.message,'error'),{enableHighAccuracy:true,timeout:15000})}
 $('arrive').onclick=()=>locate(true);
 $('share').onclick=()=>locate(false);
