@@ -3,7 +3,7 @@ import type { Env } from './types';
 import { activeEvent, ensureUser, eventById, participant, participants } from './db';
 import { ARRIVAL_RADIUS_M, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS } from './domain';
 import { buttons, postbackAction, text, uriAction, verifyIdToken } from './line';
-import { storedSettlement } from './settlement';
+import { settle, settlementText, storedSettlement } from './settlement';
 
 export const api = new Hono<{ Bindings: Env }>();
 
@@ -50,6 +50,17 @@ api.post('/arrive', async c => {
   if (newlyArrived || (!body.arrive && distance != null)) {
     const notification = text(newlyArrived ? arrivalMessage : `${person.display_name ?? '参加者'}さん: 集合地点まで約${distance}m`);
     await c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)').bind(event.group_id, JSON.stringify(notification), Date.now()).run();
+  }
+  if (newlyArrived && event.state === 'running') {
+    const remaining = await c.env.DB.prepare(`SELECT COUNT(*) n FROM participants WHERE event_id=? AND status='joining' AND arrived_at IS NULL`).bind(event.id).first<{ n: number }>();
+    const fresh = remaining?.n === 0 ? await eventById(c.env.DB, event.id) : null;
+    if (fresh?.state === 'running') {
+      const resolved = await settle(c.env.DB, event.id);
+      await c.env.DB.batch([
+        c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)').bind(event.group_id, JSON.stringify(text(settlementText(resolved))), Date.now()),
+        c.env.DB.prepare('INSERT INTO pending_group_notifications(group_id,message,created_at) VALUES(?,?,?)').bind(event.group_id, JSON.stringify(buttons('Webで見やすく確認できます', [uriAction('Webで見る', `https://liff.line.me/${c.env.LIFF_ID}?e=${event.id}&mode=settlement`)])), Date.now()),
+      ]);
+    }
   }
   return c.json({ ok: true, arrived: shouldArrive, distance, message: arrivalMessage });
 });
