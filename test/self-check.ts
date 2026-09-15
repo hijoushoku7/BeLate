@@ -152,9 +152,9 @@ assert.match(liffSource, /liff\.state/);
     [[180, 3000], [180, 3000]],
   );
   assert.deepEqual(late.debts, [], '全員遅刻なら受け取る側がいない');
-  // ダウトの当たりはギフト1本で、罰金（円）の側には混ざらない。
+  // ダウトの当たりはチケット1枚で、罰金（円）の側には混ざらない。
   assert.deepEqual(late.gifts, [{ from: 'U2', to: 'U1', amount: 1 }]);
-  assert.match(settlementText(late), /ジュース1本/);
+  assert.match(settlementText(late), /スタバのドリンクチケット1枚/);
   assert.doesNotMatch(settlementText(late), /1円/);
 }
 

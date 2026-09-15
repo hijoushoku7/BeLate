@@ -22,7 +22,7 @@ const HELP = `BeLateの使い方
 ④ 集合時刻を過ぎたら、届いたリンクから到着報告（150m以内で到着判定）
 
 ダウトはBotとの1:1トークで「ダウト」と送信。締切は集合の${LOCK_BEFORE_LABEL}で、結果は精算時にグループで全公開されます。
-当たれば相手から${GIFT_NAME}1本、はずれたら相手に1本（LINEギフトで送ります。罰金とは別会計）。
+当たれば相手から${GIFT_NAME}1枚、はずれたら相手に1枚（LINEギフトで送ります。罰金とは別会計）。
 
 キーワード
 ・ヘルプ … この案内（@BeLate とメンションしてもOK）
@@ -72,7 +72,7 @@ async function handleJoin(env: Env, event: LineEvent): Promise<void> {
   const gid = groupId(event); if (!gid) return;
   await env.DB.prepare('INSERT OR IGNORE INTO groups(line_group_id,doubt_enabled,created_at) VALUES(?,1,?)').bind(gid, Date.now()).run();
   const defaults = await groupSettings(env.DB, gid);
-  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP), buttons(`ダウト機能（遅刻するかを${GIFT_NAME}1本で賭ける）を使いますか？ 結果は精算時に全公開されます。`, [
+  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(HELP), buttons(`ダウト機能（遅刻するかを${GIFT_NAME}1枚で賭ける）を使いますか？ 結果は精算時に全公開されます。`, [
     postbackAction('使う', `action=group_doubt&group=${gid}&value=1`), postbackAction('使わない', `action=group_doubt&group=${gid}&value=0`),
   ]), buttons(`罰金はこのグループの設定が毎回自動で使われます。\n現在: ${defaults.base_fine}円 + ${defaults.per_min}円/分（上限${defaults.max_fine}円）\n変えたいときは今ここで設定してください（あとから「設定」でも変更できます）。`, [
     uriAction('罰金設定を変える', groupSettingsUrl(env, gid)),
@@ -136,7 +136,7 @@ async function doubtMenu(env: Env, lineEvent: LineEvent, eventId?: string): Prom
   const group = await env.DB.prepare('SELECT doubt_enabled FROM groups WHERE line_group_id=?').bind(row.group_id).first<{ doubt_enabled: number }>();
   if (!group?.doubt_enabled || !(await participant(env.DB, row.id, uid))) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [text('このイベントではダウトできません。')]); return; }
   const targets = (await participants(env.DB, row.id)).filter(p => p.user_id !== uid && p.status === 'joining');
-  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [quick(`誰が遅刻すると思う？（当たれば${GIFT_NAME}1本もらえる／はずれたら1本あげる）`, targets.map(p => postbackAction(p.display_name || p.user_id.slice(-6), `action=bet_target&id=${row.id}&target=${p.user_id}`)))]);
+  await reply(env.LINE_CHANNEL_ACCESS_TOKEN, lineEvent.replyToken, [quick(`誰が遅刻すると思う？（当たれば${GIFT_NAME}1枚もらえる／はずれたら1枚あげる）`, targets.map(p => postbackAction(p.display_name || p.user_id.slice(-6), `action=bet_target&id=${row.id}&target=${p.user_id}`)))]);
 }
 
 async function stats(env: Env, lineEvent: LineEvent): Promise<void> {
@@ -190,7 +190,7 @@ async function handlePostback(env: Env, event: LineEvent): Promise<void> {
     const uid = userId(event), target = q.get('target'); if (!uid || !target || uid === target || event.source.type !== 'user' || row.state !== 'open' || Date.now() >= row.meet_at - LOCK_BEFORE_MS) { await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text('このダウトは受け付けられません。')]); return; }
     if (!(await participant(env.DB, id, uid)) || !(await participant(env.DB, id, target))) return;
     const result = await env.DB.prepare('INSERT OR IGNORE INTO bets(event_id,bettor_id,target_id,predicts_late,stake) VALUES(?,?,?,1,1)').bind(id, uid, target).run();
-    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(result.meta.changes ? `ダウトを秘密で受け付けました。結果は精算時に公開されます。\n負けたら ${GIFT_URL} を送ってください。` : 'その人へのダウトは登録済みです。')]);
+    await reply(env.LINE_CHANNEL_ACCESS_TOKEN, event.replyToken, [text(result.meta.changes ? `ダウトを秘密で受け付けました。結果は精算時に公開されます。\n負けたら ${GIFT_NAME} を送ってください。\n${GIFT_URL}` : 'その人へのダウトは登録済みです。')]);
   }
 }
 

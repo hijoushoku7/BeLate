@@ -8,10 +8,10 @@ export const ARRIVAL_RADIUS_M = 150;
 
 export const DEFAULT_FINE = { baseFine: 200, perMin: 50, maxFine: 3000 } as const;
 
-// Doubt is settled in gifts, not money: one bet = one of these, sent by hand from LINEギフト.
+// Doubt is settled in gifts, not money: one bet = one ticket, sent by hand from LINEギフト.
 export const GIFT_URL = 'https://liff.line.me/1654120723-lYaWZEb6/item/3669558?from=liff-common-titlebar-share';
-export const GIFT_NAME = 'ジュース';
-export function giftCount(n: number): string { return `${GIFT_NAME}${n}本`; }
+export const GIFT_NAME = 'スタバのドリンクチケット';
+export function giftCount(n: number): string { return `${GIFT_NAME}${n}枚`; }
 
 // Shared by the per-event settings and the group defaults so both reject the same nonsense.
 export function validFine(base: number, per: number, max: number): boolean {

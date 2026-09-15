@@ -172,9 +172,9 @@ async function init(){try{
       }).join('');
       $('settleDoubt').textContent=s.doubtText;
       $('settleDebts').innerHTML=s.debts.length?s.debts.map(d=>'<li><span class="name">'+d.from+' → '+d.to+'</span><span class="amount">'+d.amount.toLocaleString('ja-JP')+'円</span></li>').join(''):'<li>支払いはありません</li>';
-      $('settleGifts').innerHTML=s.gifts.length?s.gifts.map(g=>'<li><span class="name">'+g.from+' → '+g.to+'</span><span class="amount">'+s.giftName+g.count+'本</span></li>').join(''):'<li>やり取りはありません</li>';
+      $('settleGifts').innerHTML=s.gifts.length?s.gifts.map(g=>'<li><span class="name">'+g.from+' → '+g.to+'</span><span class="amount">'+g.label+'</span></li>').join(''):'<li>やり取りはありません</li>';
       if(s.gifts.length){$('giftLink').href=s.giftUrl;$('giftLink').classList.remove('hidden')}
-      $('settle').classList.remove('hidden');say('精算結果です。罰金は現金、ダウトはギフトで各自お願いします。')}
+      $('settle').classList.remove('hidden');say('精算結果です。罰金は現金、ダウトはスタバのドリンクチケットで各自お願いします。')}
   }else if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
   else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
 }catch(e){say(e.message,'error')}finally{ready=true}}
