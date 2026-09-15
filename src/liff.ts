@@ -63,6 +63,8 @@ input[type=datetime-local]{display:block;min-width:0;min-height:48px;-webkit-app
 .roster li[data-late="1"]{border-left:3px solid var(--danger);padding-left:10px;margin-left:-13px}
 .roster li[data-late="1"] .name,.roster li[data-late="1"] .amount{color:var(--danger)}
 .roster li[data-late="1"] .sub{color:var(--danger);font-weight:700}
+.giftbtn{display:block;margin-top:14px;padding:16px;border-radius:13px;background:var(--accent);color:var(--accent-ink);
+  font-weight:800;font-size:17px;text-align:center;text-decoration:none}
 .toast{position:fixed;left:50%;bottom:22px;z-index:9;max-width:min(92vw,440px);padding:14px 18px;border-radius:14px;
   background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:16px;line-height:1.5;text-align:center;white-space:pre-wrap;
   box-shadow:0 10px 30px -10px #0f151a66;pointer-events:none;opacity:0;transform:translate(-50%,24px) scale(.96);
@@ -97,7 +99,9 @@ button.done{background:var(--accent);animation:pop .45s ease}
   <button>設定を保存</button>
 </form>
 <section id="roster" class="card hidden"><p class="eyebrow">参加者</p><ul id="rosterList" class="roster"></ul></section>
-<section id="settle" class="card hidden"><p class="eyebrow">参加者</p><ul id="settlePeople" class="roster"></ul><p class="eyebrow" style="margin-top:16px">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">支払い</p><ul id="settleDebts" class="roster"></ul></section>
+<section id="settle" class="card hidden"><p class="eyebrow">参加者</p><ul id="settlePeople" class="roster"></ul><p class="eyebrow" style="margin-top:16px">ダウト結果</p><p id="settleDoubt" class="msg"></p><p class="eyebrow" style="margin-top:16px">罰金の支払い</p><ul id="settleDebts" class="roster"></ul>
+<p class="eyebrow" style="margin-top:16px">ダウトのギフト（罰金とは別）</p><ul id="settleGifts" class="roster"></ul>
+<a id="giftLink" class="giftbtn hidden" target="_blank" rel="noopener">LINEギフトで送る</a></section>
 <p class="foot">集合地点から150m以内で到着になります</p>
 </main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -168,7 +172,9 @@ async function init(){try{
       }).join('');
       $('settleDoubt').textContent=s.doubtText;
       $('settleDebts').innerHTML=s.debts.length?s.debts.map(d=>'<li><span class="name">'+d.from+' → '+d.to+'</span><span class="amount">'+d.amount.toLocaleString('ja-JP')+'円</span></li>').join(''):'<li>支払いはありません</li>';
-      $('settle').classList.remove('hidden');say('精算結果です。支払いは各自でお願いします。')}
+      $('settleGifts').innerHTML=s.gifts.length?s.gifts.map(g=>'<li><span class="name">'+g.from+' → '+g.to+'</span><span class="amount">'+s.giftName+g.count+'本</span></li>').join(''):'<li>やり取りはありません</li>';
+      if(s.gifts.length){$('giftLink').href=s.giftUrl;$('giftLink').classList.remove('hidden')}
+      $('settle').classList.remove('hidden');say('精算結果です。罰金は現金、ダウトはギフトで各自お願いします。')}
   }else if(mode==='settings'){settings.classList.remove('hidden');$('meet').value=new Date(eventData.meetAt+32400000).toISOString().slice(0,16);$('base').value=eventData.baseFine;$('per').value=eventData.perMin;$('max').value=eventData.maxFine;say('幹事だけが変更できます。')}
   else{report.classList.remove('hidden');say('到着したらボタンを押してください。')}
 }catch(e){say(e.message,'error')}finally{ready=true}}

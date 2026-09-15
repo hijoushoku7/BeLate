@@ -2,10 +2,16 @@ import type { ParticipantRow } from './types';
 
 export const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 export const LOCK_BEFORE_MS = 5 * 60 * 1000; // ponytail: temporary test value, restore to 2 * 60 * 60 * 1000 before real use
+export const LOCK_BEFORE_LABEL = LOCK_BEFORE_MS >= 3600000 ? `${LOCK_BEFORE_MS / 3600000}時間前` : `${LOCK_BEFORE_MS / 60000}分前`;
 export const AUTO_SETTLE_MS = 3 * 60 * 60 * 1000;
 export const ARRIVAL_RADIUS_M = 150;
 
 export const DEFAULT_FINE = { baseFine: 200, perMin: 50, maxFine: 3000 } as const;
+
+// Doubt is settled in gifts, not money: one bet = one of these, sent by hand from LINEギフト.
+export const GIFT_URL = 'https://liff.line.me/1654120723-lYaWZEb6/item/3669558?from=liff-common-titlebar-share';
+export const GIFT_NAME = 'ジュース';
+export function giftCount(n: number): string { return `${GIFT_NAME}${n}本`; }
 
 // Shared by the per-event settings and the group defaults so both reject the same nonsense.
 export function validFine(base: number, per: number, max: number): boolean {
@@ -58,6 +64,17 @@ export function netDebts(transfers: Debt[]): Debt[] {
     if (!creditors[j]!.n) j++;
   }
   return result;
+}
+
+// One-sided doubt: doubters bet against a single target, so the target settles with each of them
+// directly. Hitting the prediction wins a gift from the target; missing it owes them one.
+export type BetLike = Record<string, unknown>;
+export function doubtOutcomes(bets: BetLike[], wasLate: (targetId: string) => boolean) {
+  return bets.map(b => {
+    const bettorId = String(b.bettor_id), targetId = String(b.target_id), stake = 1;
+    const won = Boolean(b.predicts_late) === wasLate(targetId);
+    return { bettorId, targetId, won, payout: won ? stake : -stake, transfer: won ? { from: targetId, to: bettorId, amount: stake } : { from: bettorId, to: targetId, amount: stake } };
+  });
 }
 
 export function fineTransfers(participants: ParticipantRow[]): Debt[] {

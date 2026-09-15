@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { activeEvent, ensureUser, eventById, groupSettings, participant, participants } from './db';
-import { ARRIVAL_RADIUS_M, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS, validFine } from './domain';
+import { ARRIVAL_RADIUS_M, GIFT_NAME, GIFT_URL, calculateFine, distanceMeters, formatJst, lateMinutes, LOCK_BEFORE_MS, validFine } from './domain';
 import { buttons, isGroupMember, postbackAction, text, uriAction, verifyIdToken } from './line';
 import { settle, settlementText, storedSettlement } from './settlement';
 
@@ -120,5 +120,7 @@ api.get('/settlement/:id', async c => {
     participants: people.map(p => ({ name: p.display_name, lateMinutes: p.late_minutes, fine: p.fine })),
     doubtText: resolved.doubtText,
     debts: resolved.debts.map(d => ({ from: resolved.names.get(d.from) ?? d.from, to: resolved.names.get(d.to) ?? d.to, amount: d.amount })),
+    gifts: resolved.gifts.map(d => ({ from: resolved.names.get(d.from) ?? d.from, to: resolved.names.get(d.to) ?? d.to, count: d.amount })),
+    giftName: GIFT_NAME, giftUrl: GIFT_URL,
   });
 });
